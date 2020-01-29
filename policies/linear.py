@@ -1,4 +1,6 @@
 import numpy as np
+from keras.models import Sequential
+from keras.layers import Dense
 from policies.base_policy import Policy
 from collections import deque
 
@@ -34,6 +36,8 @@ class LinearAgent(Policy):
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
         self.model = self.get_model()
+        self.batch_size = 4
+        self.epsilon = 0.05
 
     def adjust_weights(self, new_rewards):
         pass
@@ -58,16 +62,16 @@ class LinearAgent(Policy):
             return
 
         # make batch size smaller to decrease computation time
-        if too_slow or BATCH_SIZE > round:
-            BATCH_SIZE //= 2
+        # if too_slow or self.batch_size > round:
+        #     self.batch_size //= 2
 
-        minibatch = random.sample(self.replay_buffer, BATCH_SIZE)
+        minibatch = np.random.choice(self.replay_buffer, self.batch_size)
         for processed_prev, prev_action, reward, processed_new, new_action in minibatch:
             target = reward + self.gamma * \
                      np.amax(self.model.predict(processed_new)[0])
             target_f = self.model.predict(processed_prev)
-            target_f[0][action] = target
-            self.model.fit(state, target_f, epochs=1, verbose=0)
+            target_f[0][new_action] = target
+            self.model.fit(processed_prev, target_f, epochs=1, verbose=0)
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
@@ -103,15 +107,16 @@ class LinearAgent(Policy):
         :return: an action (from Policy.Actions) in response to the new_state.
         """
         if np.random.rand() < self.epsilon:
-            return np.random.choice(bp.Policy.ACTIONS)
+            return np.random.choice(Policy.ACTIONS)
+        return Policy.ACTIONS[np.argmax(self.model.predict(new_state)[0])]
 
-        processed_new = self.process_state(new_state)
-        choice = np.random.choice(3, 1, p=self.weights)[0]
-        new_action = Policy.ACTIONS[choice]
-        if prev_state is not None:
-            processed_prev = self.process_state(prev_state)
-            self.replay_buffer.append((processed_prev, prev_action, reward, processed_new, new_action))
-        return new_action
+        # processed_new = self.process_state(new_state)
+        # choice = np.random.choice(3, 1, p=self.weights)[0]
+        # new_action = Policy.ACTIONS[choice]
+        # if prev_state is not None:
+        #     processed_prev = self.process_state(prev_state)
+        #     self.replay_buffer.append((processed_prev, prev_action, reward, processed_new, new_action))
+        # return new_action
 
     def process_state(self, state):
         """
@@ -142,4 +147,6 @@ class LinearAgent(Policy):
 
     def get_model(self):
         # return some tensorflow/keras model with the functions predict and fit
-        return
+        model = Sequential()
+        model.add(Dense(3, activation='linear'))
+        return model
