@@ -1,7 +1,10 @@
 import numpy as np
 from policies.base_policy import Policy
+from collections import deque
 
 LEARNING_RATE = 1e-3
+EPSILON = 0.05
+BATCH_SIZE = 2
 
 
 class LinearAgent(Policy):
@@ -13,6 +16,7 @@ class LinearAgent(Policy):
         :return: A map of string -> value after casting to useful objects, these will be added as members to the policy
         """
         policy_args['lr'] = float(policy_args['lr']) if 'lr' in policy_args else LEARNING_RATE
+        policy_args['epsilon'] = float(policy_args['epsilon']) if 'epsilon' in policy_args else EPSILON
         return policy_args
 
     def init_run(self):
@@ -25,8 +29,14 @@ class LinearAgent(Policy):
         """
         self.weights = np.ones(3).astype('float32') / 3.0
         self.r_sum = 0
-        self.replay_buffer = list()
+        self.replay_buffer = deque(maxlen=1000)
         self.window = 3  # should check different sizes, this is just an initial value
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.995
+        self.model = self.get_model()
+
+    def adjust_weights(self, new_rewards):
+        pass
 
     def learn(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -44,31 +54,37 @@ class LinearAgent(Policy):
                         policy for a few rounds in a row. you may use this to make your
                         computation time smaller (by lowering the batch size for example).
         """
-        if len(self.replay_buffer) > 0:
-            pass  # act according to saved buffer
-        if reward is not None:
-            if prev_action == 'L':
-                self.weights[0] += reward * self.__dict__['lr']
-            elif prev_action == 'F':  #
-                self.weights[1] += reward * self.__dict__['lr']
-            else:  #
-                self.weights[2] += reward * self.__dict__['lr']
-            self.weights = np.exp(self.weights)
-            self.weights = self.weights / self.weights.sum()
+        if not len(self.replay_buffer):
+            return
 
-            try:
-                if round % 100 == 0:
-                    if round > self.game_duration - self.score_scope:
-                        self.log("Rewards in last 100 rounds which counts towards the score: " + str(self.r_sum), 'VALUE')
-                    else:
-                        self.log("Rewards in last 100 rounds: " + str(self.r_sum), 'VALUE')
-                    self.r_sum = 0
+        # make batch size smaller to decrease computation time
+        if too_slow or BATCH_SIZE > round:
+            BATCH_SIZE //= 2
+
+        minibatch = random.sample(self.replay_buffer, BATCH_SIZE)
+        for processed_prev, prev_action, reward, processed_new, new_action in minibatch:
+            target = reward + self.gamma * \
+                     np.amax(self.model.predict(processed_new)[0])
+            target_f = self.model.predict(processed_prev)
+            target_f[0][action] = target
+            self.model.fit(state, target_f, epochs=1, verbose=0)
+
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
+        try:
+            if round % 100 == 0:
+                if round > self.game_duration - self.score_scope:
+                    self.log("Rewards in last 100 rounds which counts towards the score: " + str(self.r_sum), 'VALUE')
                 else:
-                    self.r_sum += reward
+                    self.log("Rewards in last 100 rounds: " + str(self.r_sum), 'VALUE')
+                self.r_sum = 0
+            else:
+                self.r_sum += reward
 
-            except Exception as e:
-                self.log("Something Went Wrong...", 'EXCEPTION')
-                self.log(e, 'EXCEPTION')
+        except Exception as e:
+            self.log("Something Went Wrong...", 'EXCEPTION')
+            self.log(e, 'EXCEPTION')
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -86,6 +102,9 @@ class LinearAgent(Policy):
                         computation time smaller (by lowering the batch size for example)...
         :return: an action (from Policy.Actions) in response to the new_state.
         """
+        if np.random.rand() < self.epsilon:
+            return np.random.choice(bp.Policy.ACTIONS)
+
         processed_new = self.process_state(new_state)
         choice = np.random.choice(3, 1, p=self.weights)[0]
         new_action = Policy.ACTIONS[choice]
@@ -110,7 +129,8 @@ class LinearAgent(Policy):
         if vertical and horizontal:
             window = board[tl[0]: br[0], tl[1]: br[1]]
         elif vertical and not horizontal:
-            window = np.concatenate((board[tl[0]: br[0], tl[1]: self.board_size[1]], board[tl[0]: br[0], : br[1]]), axis=1)
+            window = np.concatenate((board[tl[0]: br[0], tl[1]: self.board_size[1]], board[tl[0]: br[0], : br[1]]),
+                                    axis=1)
         elif horizontal and not vertical:
             window = np.concatenate((board[tl: self.board_size[0], tl[1]: br[1]], board[: br[0], tl[1]: br[1]]))
         else:
@@ -119,3 +139,7 @@ class LinearAgent(Policy):
                                      np.concatenate((board[: br[0], tl[1]: self.board_size[1]],
                                                      board[: br[0], : br[1]]), axis=1)))
         return window, head
+
+    def get_model(self):
+        # return some tensorflow/keras model with the functions predict and fit
+        return
