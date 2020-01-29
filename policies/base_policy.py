@@ -3,7 +3,7 @@ import multiprocessing as mp
 import traceback
 
 import numpy as np
-np.set_printoptions(threshold=0)
+np.set_printoptions(threshold=5)
 
 POLICIES = {}
 

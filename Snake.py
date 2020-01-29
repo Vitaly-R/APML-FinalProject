@@ -8,8 +8,10 @@ import argparse
 import sys
 import gzip
 import subprocess as sp
+
 import numpy as np
 import scipy.signal as ss
+
 from policies import base_policy
 from policies import *
 
@@ -17,9 +19,9 @@ EMPTY_VAL = -1
 MAX_PLAYERS = 5
 OBSTACLE_VAL = 5
 REGULAR_RENDER_MAP = {EMPTY_VAL: ' ', OBSTACLE_VAL: '+'}
-FOOD_RENDER_MAP = {6: '*', 7: '$', 8: 'X'}
-FOOD_VALUE_MAP = {6: 1, 7: 3, 8: 0}
-FOOD_REWARD_MAP = {6: 2, 7: 5, 8: -1}
+FOOD_RENDER_MAP = {6:'*', 7:'$', 8:'X'}
+FOOD_VALUE_MAP = {6:1, 7:3, 8:0}
+FOOD_REWARD_MAP = {6:2, 7:5, 8:-1}
 THE_DEATH_PENALTY = -5
 
 ILLEGAL_MOVE = "Illegal Action: the default action was selected instead. Player tried action: "
@@ -38,17 +40,15 @@ def clear_q(q):
     given a queue, empty it.
     """
     while not q.empty():
-        try:
-            q.get_nowait()
-        except queue.Empty:
-            break
+        try: q.get_nowait()
+        except queue.Empty: break
 
 
 def days_hours_minutes_seconds(td):
     """
     parse time for logging.
     """
-    return td.days, td.seconds // 3600, (td.seconds//60) % 60, td.seconds % 60
+    return td.days, td.seconds//3600, (td.seconds//60)%60, td.seconds%60
 
 
 def random_partition(num, max_part_size):
@@ -59,7 +59,7 @@ def random_partition(num, max_part_size):
     return parts
 
 
-class Position:
+class Position():
 
     def __init__(self, position, board_size):
         self.pos = position
@@ -74,19 +74,15 @@ class Position:
                         self.board_size)
 
     def move(self, dir):
-        if dir == 'E':
-            return self + (0, 1)
-        if dir == 'W':
-            return self + (0, -1)
-        if dir == 'N':
-            return self + (-1, 0)
-        if dir == 'S':
-            return self + (1, 0)
+        if dir == 'E': return self + (0,1)
+        if dir == 'W': return self + (0,-1)
+        if dir == 'N': return self + (-1, 0)
+        if dir == 'S': return self + (1, 0)
         raise ValueError('unrecognized direction')
 
 
 class Agent(object):
-    SHUTDOWN_TIMEOUT = 60  # seconds until policy is considered unresponsive
+    SHUTDOWN_TIMEOUT = 60 # seconds until policy is considered unresponsive
 
     def __init__(self, id, policy, policy_args, board_size, logq, game_duration, score_scope):
         """
@@ -99,12 +95,14 @@ class Agent(object):
         :param game_duration: the expected duration of the game in turns
         :param score_scope: the amount of rounds at the end of the game which count towards the score
         """
+
         self.id = id
         self.len = 0
         self.policy_class = policy
         self.round = 0
         self.unresponsive_count = 0
         self.too_slow = False
+
         self.sq = mp.Queue()
         self.aq = mp.Queue()
         self.mq = mp.Queue()
@@ -113,14 +111,17 @@ class Agent(object):
         self.policy.daemon = True
         self.policy.start()
 
+
     def handle_state(self, round, prev_state, prev_action, reward, new_state):
         """
         given the new state and previous state-action-reward, pass the information
         to the policy for action selection and/or learning.
         """
+
         self.round = round
         clear_q(self.sq)  # remove previous states from queue if they weren't handled yet
         self.sq.put((round, prev_state, prev_action, reward, new_state, self.too_slow))
+
 
     def get_action(self):
         """
@@ -138,6 +139,7 @@ class Agent(object):
             else:
                 self.too_slow = False
                 self.unresponsive_count = 0
+
         except queue.Empty:
             self.unresponsive_count += 1
             action = base_policy.Policy.DEFAULT_ACTION
@@ -148,8 +150,10 @@ class Agent(object):
                 self.unresponsive_count = TOO_SLOW_THRESHOLD
             if self.unresponsive_count > TOO_SLOW_THRESHOLD:
                 self.too_slow = True
+
         clear_q(self.aq)  # clear the queue from unhandled actions
         return action
+
 
     def shutdown(self):
         """
@@ -158,6 +162,7 @@ class Agent(object):
         structure that can be pickled.
         :return: the model data structure.
         """
+
         clear_q(self.sq)
         clear_q(self.aq)
         self.sq.put(None)  # shutdown signal
@@ -172,28 +177,30 @@ class Game(object):
         start_time = datetime.datetime.now()
         logfile = None
         if file_name:
-            logfile = gzip.GzipFile(file_name, 'w') if file_name.endswith('.gz') else open(file_name, 'wb')
+            logfile = gzip.GzipFile(file_name,
+                                    'w') if file_name.endswith(
+                '.gz') else open(file_name, 'wb')
         for frm, type, msg in iter(q.get, None):
             td = datetime.datetime.now() - start_time
-            msg = '%i::%i:%i:%i\t%s\t%s\t%s' % (days_hours_minutes_seconds(td) + (frm, type, msg))
-            if logfile:
-                logfile.write((msg + '\n').encode('ascii'))
-            if on_screen:
-                print(msg)
-        if logfile:
-            logfile.close()
+            msg = '%i::%i:%i:%i\t%s\t%s\t%s' % (
+            days_hours_minutes_seconds(td) + (frm, type, msg))
+            if logfile: logfile.write((msg + '\n').encode('ascii'))
+            if on_screen: print(msg)
+        if logfile: logfile.close()
 
-    def _find_empty_slot(self, shape=(1, 3)):
+
+    def _find_empty_slot(self, shape=(1,3)):
         is_empty = np.asarray(self.board == EMPTY_VAL, dtype=int)
         match = ss.convolve2d(is_empty, np.ones(shape), mode='same') == np.prod(shape)
-        if not np.any(match):
-            raise ValueError('no empty slots of requested shape')
+        if not np.any(match): raise ValueError('no empty slots of requested shape')
         r = np.random.choice(np.nonzero(np.any(match,axis=1))[0])
-        c = np.random.choice(np.nonzero(match[r, :])[0])
-        return Position((r, c), self.board_size)
+        c = np.random.choice(np.nonzero(match[r,:])[0])
+        return Position((r,c), self.board_size)
+
 
     def __init__(self, args):
         self.__dict__.update(args.__dict__)
+
         # check that the number of players is OK:
         self.n = len(self.policies)
         assert self.n <= MAX_PLAYERS, "Too Many Players!"
@@ -250,7 +257,7 @@ class Game(object):
             self.chains.append(chain)
             self.size.append(player_size)
             self.growing.append(growing)
-            self.directions.append(direction)  # Vitaly - removed parenthesis around direction
+            self.directions.append((direction))
             for position in chain:
                 self.board[position[0], position[1]] = i
 
@@ -263,7 +270,7 @@ class Game(object):
         if self.record_to is not None and self.playback_from is None:
             self.archive = open(self.record_to, 'wb')
             dict = self.__dict__.copy()
-            del dict['players']  # remove problematic objects that are irrelevant to playback.
+            del dict['players'] #remove problematic objects that are irrelevant to playback.
             del dict['archive']
             del dict['logq']
             del dict['logger']
@@ -271,14 +278,18 @@ class Game(object):
             del dict['playback_final_round']
             pickle.dump(dict, self.archive)
         self.record = self.record_to is not None
+
         # wait for player initialization (Keras loading time):
         time.sleep(self.player_init_time)
 
+
     def init_player(self):
+
         # initialize the position and direction of the player:
         dir = np.random.choice(list(base_policy.Policy.TURNS.keys()))
         shape = (1, 3) if dir in ['W', 'E'] else (3, 1)
         pos = self._find_empty_slot(shape)
+
         # gather stats about the player:
         chain = []
         chain.append(pos)
@@ -288,20 +299,24 @@ class Game(object):
 
         return chain, player_size, growing, dir
 
+
     def reset_player(self, id):
+
         positions = np.array(np.where(self.board == id))
         for pos in range(positions.shape[1]):
-            self.board[positions[0, pos], positions[1, pos]] = EMPTY_VAL
+            self.board[positions[0,pos],positions[1,pos]] = EMPTY_VAL
+
         # turn parts of the corpse into food:
         food_n = np.random.binomial(positions.shape[1], self.food_ratio)
         if self.item_count + food_n < self.max_item_density * np.prod(self.board_size):
             subidx = np.array(np.random.choice(positions.shape[1], size=food_n, replace=False))
             if len(subidx) > 0:
                 randfood = np.random.choice(list(FOOD_VALUE_MAP.keys()), food_n)
-                for i, idx in enumerate(subidx):
-                    self.board[positions[0, idx], positions[1, idx]] = randfood[i]
+                for i,idx in enumerate(subidx):
+                    self.board[positions[0,idx],positions[1,idx]] = randfood[i]
                 self.item_count += food_n
         return self.init_player()
+
 
     def randomize(self):
         if np.random.rand(1) < self.random_food_prob:
@@ -311,7 +326,9 @@ class Game(object):
                 self.board[slot[0], slot[1]] = randfood
                 self.item_count += 1
 
+
     def move_snake(self, id, action):
+
         # delete the tail if the snake isn't growing:
         if self.growing[id] > 0:
             self.growing[id] -= 1
@@ -326,9 +343,11 @@ class Game(object):
         self.chains[id].append(self.chains[id][-1].move(self.directions[id]))
         self.board[self.chains[id][-1][0], self.chains[id][-1][1]] = id
 
+
     def play_a_round(self):
+
         # randomize the players:
-        pperm = np.random.permutation([(i, p) for i, p in enumerate(self.players)])
+        pperm = np.random.permutation([(i,p) for i, p in enumerate(self.players)])
 
         # distribute states and rewards on previous round
         for i, p in pperm:
@@ -379,11 +398,13 @@ class Game(object):
         self.randomize()
         self.round += 1
 
+
     def render(self, r):
+
         if os.name == 'nt':
-            os.system('cls')  # clear screen for Windows
+            os.system('cls') # clear screen for Windows
         else:
-            print(chr(27)+"[2J")  # clear screen for linux
+            print(chr(27)+"[2J") # clear screen for linux
 
         # print the scores:
         print("Time Step: " + str(r) + "/" + str(self.game_duration))
@@ -399,13 +420,14 @@ class Game(object):
         board.append(horzline)
         print('\n'.join(board))
 
+
     def run(self):
         try:
             r = 0
             while r < self.game_duration:
                 r += 1
                 if self.to_render:
-                    if not(self.is_playback and (r < self.playback_initial_round or r > self.playback_final_round)):
+                    if not(self.is_playback and (r<self.playback_initial_round or r>self.playback_final_round)):
                         self.render(r)
                         time.sleep(self.render_rate)
                 else:
@@ -437,7 +459,7 @@ class Game(object):
 
             if not self.is_playback:
 
-                output = [','.join(['game_id', 'player_id', 'policy', 'score'])]
+                output = [','.join(['game_id','player_id','policy','score'])]
                 game_id = str(abs(id(self)))
                 for p, s in zip(self.players, self.scores):
                     p.shutdown()
@@ -523,7 +545,5 @@ def parse_args():
 
 
 if __name__ == '__main__':
-    args = parse_args()
-    print(args)
-    g = Game(args)
+    g = Game(parse_args())
     g.run()
