@@ -86,10 +86,12 @@ class LinearAgent(Policy):
                         computation time smaller (by lowering the batch size for example)...
         :return: an action (from Policy.Actions) in response to the new_state.
         """
+        processed_new = self.process_state(new_state)
         choice = np.random.choice(3, 1, p=self.weights)[0]
         new_action = Policy.ACTIONS[choice]
         if prev_state is not None:
-            self.replay_buffer.append((prev_state, prev_action, reward, new_state, new_action))
+            processed_prev = self.process_state(prev_state)
+            self.replay_buffer.append((processed_prev, prev_action, reward, processed_new, new_action))
         return new_action
 
     def process_state(self, state):
