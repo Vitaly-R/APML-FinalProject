@@ -3,10 +3,12 @@ import numpy as np
 # from keras.layers import Dense
 from policies.base_policy import Policy
 from collections import deque
+import random as rnd
 
 LEARNING_RATE = 1e-3
 EPSILON = 1.0
-BATCH_SIZE = 2
+BATCH_SIZE = 25
+BATCH_THRESHOLD = 300
 NUM_FEATURES = 44  # there are 4 adjacent positions to the head of the snake, each holding one of 11 possible values
 VALUES = 11
 GAMMA = 0.95
@@ -38,12 +40,11 @@ class LinearAgent(Policy):
         self.replay_buffer = deque(maxlen=1000)
         self.window = 3  # should check different sizes, this is just an initial value
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
-        self.learning_rate_min = 0.001
+        self.epsilon_decay = 0.999
+        self.learning_rate_min = 0.1
         self.learning_rate_decay = 0.995
-        # self.max_gamma = 0.95
         # self.model = self.get_model()
-        self.batch_size = 4
+        self.batch_size = BATCH_SIZE
         self.epsilon = self.__dict__['epsilon']
         self.learning_rate = self.__dict__['lr']
         self.gamma = self.__dict__['gamma']
@@ -72,7 +73,22 @@ class LinearAgent(Policy):
             self.epsilon *= self.epsilon_decay
         if self.learning_rate > self.learning_rate_min:
             self.learning_rate *= self.learning_rate_decay
-        self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward + self.gamma * np.max(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state))))
+
+        # train on batch
+        if len(self.replay_buffer) > BATCH_THRESHOLD:
+            minibatch = rnd.sample(self.replay_buffer, self.batch_size)
+            for processed_prev, prev_action, reward, processed_new, new_action in minibatch:
+                # if the action we get now is different from the action we picked - retrain
+                predictions = self.get_q_values(processed_new, self.__get_global_direction(processed_prev, processed_new))
+                if self.ACTIONS[np.argmax(predictions)] != new_action:
+                    self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (
+                                reward + self.gamma * np.max(
+                            self.get_q_values(processed_new, self.__get_global_direction(processed_prev, processed_new))))
+
+        # train on current
+        self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * \
+                       (reward + self.gamma *
+                        np.max(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state))))
 
         # TODO - If the linear model works, remove the code below
         # if not len(self.replay_buffer):
@@ -179,8 +195,13 @@ class LinearAgent(Policy):
         :return: an action (from Policy.Actions) in response to the new_state.
         """
         if np.random.rand() < self.epsilon or prev_state is None:
-            return np.random.choice(Policy.ACTIONS)
-        return self.ACTIONS[np.argmax(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state)))]
+            action = np.random.choice(Policy.ACTIONS)
+            if prev_state is not None:
+                self.replay_buffer.append((prev_state, prev_action, reward, new_state, action))
+            return action
+        action = self.ACTIONS[np.argmax(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state)))]
+        self.replay_buffer.append((prev_state, prev_action, reward, new_state, action))
+        return action
 
         # processed_new = self.process_state(new_state)
         # choice = np.random.choice(3, 1, p=self.weights)[0]
