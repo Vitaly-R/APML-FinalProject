@@ -1,12 +1,15 @@
 import numpy as np
-from keras.models import Sequential
-from keras.layers import Dense
+# from keras.models import Sequential
+# from keras.layers import Dense
 from policies.base_policy import Policy
 from collections import deque
 
 LEARNING_RATE = 1e-3
 EPSILON = 0.05
 BATCH_SIZE = 2
+NUM_FEATURES = 44  # there are 4 adjacent positions to the head of the snake, each holding one of 11 possible values
+VALUES = 11
+GAMMA = 0.2
 
 
 class LinearAgent(Policy):
@@ -19,6 +22,7 @@ class LinearAgent(Policy):
         """
         policy_args['lr'] = float(policy_args['lr']) if 'lr' in policy_args else LEARNING_RATE
         policy_args['epsilon'] = float(policy_args['epsilon']) if 'epsilon' in policy_args else EPSILON
+        policy_args['gamma'] = float(policy_args['gamma']) if 'gamma' in policy_args else GAMMA
         return policy_args
 
     def init_run(self):
@@ -29,18 +33,17 @@ class LinearAgent(Policy):
         to load your pickled model and set the variables accordingly, if the
         game uses a saved model and is not a training session.
         """
-        self.weights = np.ones(3).astype('float32') / 3.0
+        self.weights = np.random.random(NUM_FEATURES).astype('float32')
         self.r_sum = 0
         self.replay_buffer = deque(maxlen=1000)
         self.window = 3  # should check different sizes, this is just an initial value
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
-        self.model = self.get_model()
+        # self.model = self.get_model()
         self.batch_size = 4
-        self.epsilon = 0.05
-
-    def adjust_weights(self, new_rewards):
-        pass
+        self.epsilon = self.__dict__['epsilon']
+        self.learning_rate = self.__dict__['lr']
+        self.gamma = self.__dict__['gamma']
 
     def learn(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -58,37 +61,94 @@ class LinearAgent(Policy):
                         policy for a few rounds in a row. you may use this to make your
                         computation time smaller (by lowering the batch size for example).
         """
-        if not len(self.replay_buffer):
+        if prev_state is None:
+            # This will only happen at the beginning of the game, in which case we cannot actually learn.
             return
+        self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward + self.gamma * np.max(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state))))
+        # TODO - If the linear model works, remove the code below
+        # if not len(self.replay_buffer):
+        #     return
 
         # make batch size smaller to decrease computation time
         # if too_slow or self.batch_size > round:
         #     self.batch_size //= 2
 
-        minibatch = np.random.choice(self.replay_buffer, self.batch_size)
-        for processed_prev, prev_action, reward, processed_new, new_action in minibatch:
-            target = reward + self.gamma * \
-                     np.amax(self.model.predict(processed_new)[0])
-            target_f = self.model.predict(processed_prev)
-            target_f[0][new_action] = target
-            self.model.fit(processed_prev, target_f, epochs=1, verbose=0)
+        # minibatch = np.random.choice(self.replay_buffer, self.batch_size)
+        # for processed_prev, prev_action, reward, processed_new, new_action in minibatch:
+        #     target = reward + self.gamma * \
+        #              np.amax(self.model.predict(processed_new)[0])
+        #     target_f = self.model.predict(processed_prev)
+        #     target_f[0][new_action] = target
+        #     self.model.fit(processed_prev, target_f, epochs=1, verbose=0)
+        #
+        # if self.epsilon > self.epsilon_min:
+        #     self.epsilon *= self.epsilon_decay
+        #
+        # try:
+        #     if round % 100 == 0:
+        #         if round > self.game_duration - self.score_scope:
+        #             self.log("Rewards in last 100 rounds which counts towards the score: " + str(self.r_sum), 'VALUE')
+        #         else:
+        #             self.log("Rewards in last 100 rounds: " + str(self.r_sum), 'VALUE')
+        #         self.r_sum = 0
+        #     else:
+        #         self.r_sum += reward
+        #
+        # except Exception as e:
+        #     self.log("Something Went Wrong...", 'EXCEPTION')
+        #     self.log(e, 'EXCEPTION')
 
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-
-        try:
-            if round % 100 == 0:
-                if round > self.game_duration - self.score_scope:
-                    self.log("Rewards in last 100 rounds which counts towards the score: " + str(self.r_sum), 'VALUE')
-                else:
-                    self.log("Rewards in last 100 rounds: " + str(self.r_sum), 'VALUE')
-                self.r_sum = 0
+    def __get_global_direction(self, prev_state, current_state):
+        prev_head = prev_state[1]
+        curr_head = current_state[1]
+        if prev_head[0] == curr_head[0]:
+            # moving horizontally
+            if prev_head[1] < curr_head[1]:
+                # moving to the east
+                return 'E'
             else:
-                self.r_sum += reward
+                # moving to the west
+                return 'W'
+        else:
+            # moving vertically
+            if prev_head[0] < curr_head[0]:
+                # moving to the north
+                return 'N'
+            else:
+                # moving to the south
+                return 'S'
 
-        except Exception as e:
-            self.log("Something Went Wrong...", 'EXCEPTION')
-            self.log(e, 'EXCEPTION')
+    def __get_next_head_pos(self, state, action, global_direction):
+        """"""
+        head = state[1]
+        if global_direction == 'N':
+            l, r, f = (0, -1), (0, 1), (-1, 0)
+        elif global_direction == 'S':
+            l, r, f = (0, 1), (0, -1), (1, 0)
+        elif global_direction == 'E':
+            l, r, f = (-1, 0), (1, 0), (0, 1)
+        else:
+            l, r, f = (1, 0), (-1, 0), (0, -1)
+        if action == "L":
+            return head + l
+        elif action == "R":
+            return head + r
+        return head + f
+
+    def __feature_function(self, state):
+        """
+        Parses the given state into pre-determined features.
+        The function encodes the values in the 4 adjacent positions to the snake's head into an indicator vector.
+        :param state: A state as defined in the exercise requirements.
+        :return: An array of features representing the state.
+        """
+        features = np.zeros(NUM_FEATURES)
+        board, head = state
+        features[1 + board[(head[0] - 1) % self.board_size[0], head[1]]] = 1  # encoding of the value in the position above the snake's head
+        features[VALUES + 1 + board[head[0], (head[1] - 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the left of the snake's head
+        features[2 * VALUES + 1 + board[(head[0] + 1) % self.board_size[0], head[1]]] = 1  # encoding of the value in the position below the snake's head
+        features[3 * VALUES + 1 + board[head[0], (head[1] + 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the right of the snake's head
+        return features
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -106,9 +166,9 @@ class LinearAgent(Policy):
                         computation time smaller (by lowering the batch size for example)...
         :return: an action (from Policy.Actions) in response to the new_state.
         """
-        if np.random.rand() < self.epsilon:
+        if np.random.rand() < self.epsilon or prev_state is None:
             return np.random.choice(Policy.ACTIONS)
-        return Policy.ACTIONS[np.argmax(self.model.predict(new_state)[0])]
+        return self.ACTIONS[np.argmax(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state)))]
 
         # processed_new = self.process_state(new_state)
         # choice = np.random.choice(3, 1, p=self.weights)[0]
@@ -117,6 +177,13 @@ class LinearAgent(Policy):
         #     processed_prev = self.process_state(prev_state)
         #     self.replay_buffer.append((processed_prev, prev_action, reward, processed_new, new_action))
         # return new_action
+
+    def get_q_values(self, state, global_direction):
+        q_vals = np.zeros(len(Policy.ACTIONS))
+        for i, action in enumerate(Policy.ACTIONS):
+            next_head = self.__get_next_head_pos(state, action, global_direction)
+            q_vals[i] = np.dot(self.weights, self.__feature_function((state, next_head)))
+        return q_vals
 
     def process_state(self, state):
         """
@@ -145,8 +212,8 @@ class LinearAgent(Policy):
                                                      board[: br[0], : br[1]]), axis=1)))
         return window, head
 
-    def get_model(self):
-        # return some tensorflow/keras model with the functions predict and fit
-        model = Sequential()
-        model.add(Dense(3, activation='linear'))
-        return model
+    # def get_model(self):
+    #     return some tensorflow/keras model with the functions predict and fit
+        # model = Sequential()
+        # model.add(Dense(3, activation='linear'))
+        # return model

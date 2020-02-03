@@ -61,7 +61,6 @@ class Policy(mp.Process):
         'E': {'L': 'N', 'R': 'S', 'F': 'E'}
     }
 
-
     def __init__(self, policy_args, board_size, stateq, actq, modelq, logq, id, game_duration, score_scope):
         """
         initialize the policy.
@@ -86,7 +85,6 @@ class Policy(mp.Process):
         self.score_scope = score_scope
         self.__dict__.update(self.cast_string_args(policy_args))
 
-
     def log(self, msg, type=' '):
         """
         A logging function you can use for debugging and anything else you need.
@@ -96,7 +94,6 @@ class Policy(mp.Process):
         :param type: the type of the message (e.g. "error" or "debug"...)
         """
         self.lq.put((str(self.id), type, msg))
-
 
     def run(self):
         """
@@ -123,7 +120,6 @@ class Policy(mp.Process):
             for input in iter(self.sq.get, None):
                 if input[0] == 'get_state': self.aq.put(None)
 
-
     def cast_string_args(self, policy_args):
         """
         this function casts arguments passed during policy construction to their proper types/names.
@@ -131,7 +127,6 @@ class Policy(mp.Process):
         :return: A map of string -> value after casting to useful objects, these will be added as members to the policy
         """
         raise NotImplementedError
-
 
     def init_run(self):
         """
@@ -142,7 +137,6 @@ class Policy(mp.Process):
         game uses a saved model and is not a training session.
         """
         raise NotImplementedError
-
 
     def learn(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -161,7 +155,6 @@ class Policy(mp.Process):
                         computation time smaller (by lowering the batch size for example).
         """
         raise NotImplementedError
-
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """

@@ -74,10 +74,14 @@ class Position():
                         self.board_size)
 
     def move(self, dir):
-        if dir == 'E': return self + (0,1)
-        if dir == 'W': return self + (0,-1)
-        if dir == 'N': return self + (-1, 0)
-        if dir == 'S': return self + (1, 0)
+        if dir == 'E':
+            return self + (0, 1)
+        if dir == 'W':
+            return self + (0, -1)
+        if dir == 'N':
+            return self + (-1, 0)
+        if dir == 'S':
+            return self + (1, 0)
         raise ValueError('unrecognized direction')
 
 
