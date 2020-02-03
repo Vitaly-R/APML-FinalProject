@@ -5,11 +5,11 @@ from policies.base_policy import Policy
 from collections import deque
 
 LEARNING_RATE = 1e-3
-EPSILON = 0.05
+EPSILON = 1.0
 BATCH_SIZE = 2
 NUM_FEATURES = 44  # there are 4 adjacent positions to the head of the snake, each holding one of 11 possible values
 VALUES = 11
-GAMMA = 0.2
+GAMMA = 0.95
 
 
 class LinearAgent(Policy):
@@ -39,6 +39,9 @@ class LinearAgent(Policy):
         self.window = 3  # should check different sizes, this is just an initial value
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
+        self.learning_rate_min = 0.001
+        self.learning_rate_decay = 0.995
+        # self.max_gamma = 0.95
         # self.model = self.get_model()
         self.batch_size = 4
         self.epsilon = self.__dict__['epsilon']
@@ -64,7 +67,13 @@ class LinearAgent(Policy):
         if prev_state is None:
             # This will only happen at the beginning of the game, in which case we cannot actually learn.
             return
+        # update the weights, epsilon and lr
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+        if self.learning_rate > self.learning_rate_min:
+            self.learning_rate *= self.learning_rate_decay
         self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward + self.gamma * np.max(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state))))
+
         # TODO - If the linear model works, remove the code below
         # if not len(self.replay_buffer):
         #     return
@@ -100,10 +109,12 @@ class LinearAgent(Policy):
 
     def __get_global_direction(self, prev_state, current_state):
         prev_head = prev_state[1]
+        prev_head_pos = prev_head[0]
         curr_head = current_state[1]
-        if prev_head[0] == curr_head[0]:
+        curr_head_pos = curr_head[0]
+        if prev_head_pos[0] == curr_head_pos[0]:
             # moving horizontally
-            if prev_head[1] < curr_head[1]:
+            if prev_head_pos[1] < curr_head_pos[1]:
                 # moving to the east
                 return 'E'
             else:
@@ -111,7 +122,7 @@ class LinearAgent(Policy):
                 return 'W'
         else:
             # moving vertically
-            if prev_head[0] < curr_head[0]:
+            if prev_head_pos[0] < curr_head_pos[0]:
                 # moving to the north
                 return 'N'
             else:
@@ -135,7 +146,7 @@ class LinearAgent(Policy):
             return head + r
         return head + f
 
-    def __feature_function(self, state):
+    def __feature_function(self, state, next_head_pos):
         """
         Parses the given state into pre-determined features.
         The function encodes the values in the 4 adjacent positions to the snake's head into an indicator vector.
@@ -144,10 +155,11 @@ class LinearAgent(Policy):
         """
         features = np.zeros(NUM_FEATURES)
         board, head = state
-        features[1 + board[(head[0] - 1) % self.board_size[0], head[1]]] = 1  # encoding of the value in the position above the snake's head
-        features[VALUES + 1 + board[head[0], (head[1] - 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the left of the snake's head
-        features[2 * VALUES + 1 + board[(head[0] + 1) % self.board_size[0], head[1]]] = 1  # encoding of the value in the position below the snake's head
-        features[3 * VALUES + 1 + board[head[0], (head[1] + 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the right of the snake's head
+        pos = next_head_pos[0]
+        features[1 + board[(pos[0] - 1) % self.board_size[0], pos[1]]] = 1  # encoding of the value in the position above the snake's head
+        features[VALUES + 1 + board[pos[0], (pos[1] - 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the left of the snake's head
+        features[2 * VALUES + 1 + board[(pos[0] + 1) % self.board_size[0], pos[1]]] = 1  # encoding of the value in the position below the snake's head
+        features[3 * VALUES + 1 + board[pos[0], (pos[1] + 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the right of the snake's head
         return features
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
@@ -181,8 +193,8 @@ class LinearAgent(Policy):
     def get_q_values(self, state, global_direction):
         q_vals = np.zeros(len(Policy.ACTIONS))
         for i, action in enumerate(Policy.ACTIONS):
-            next_head = self.__get_next_head_pos(state, action, global_direction)
-            q_vals[i] = np.dot(self.weights, self.__feature_function((state, next_head)))
+            next_head_pos = self.__get_next_head_pos(state, action, global_direction)
+            q_vals[i] = np.dot(self.weights, self.__feature_function(state, next_head_pos))
         return q_vals
 
     def process_state(self, state):
