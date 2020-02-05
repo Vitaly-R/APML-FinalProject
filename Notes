@@ -1,0 +1,14 @@
+Sup?
+
+Features:
+We need to consider (prev state, prev action, curr state, direction, cell value) - which means 81 * 3 * 81 * 4 * 11 features
+So our weights should be of size 866k
+
+So we change the size of the processed board to 5*5,
+and we get 25 * 3 * 25 * 4 *11 = 82,500 features
+
+since the direction and the prev action are basically the same - we can remove the prev action,
+so we get 27,500 features.
+
+
+
