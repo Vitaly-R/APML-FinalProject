@@ -3,7 +3,7 @@ from policies.base_policy import Policy
 from collections import deque
 import random as rnd
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 0.1
 EPSILON = 1.0
 BATCH_SIZE = 25
 BATCH_THRESHOLD = 300
@@ -39,12 +39,10 @@ class LinearAgent(Policy):
         self.r_sum = 0
         self.replay_buffer = deque(maxlen=1000)
         self.window = 3  # should check different sizes, this is just an initial value
-        self.epsilon_min = 0.01
+        self.epsilon_min = 0.05
         self.epsilon_decay = 0.999
-        self.epsilon_decay_rate = 25
-        self.learning_rate_min = 0.1
+        self.learning_rate_min = 1e-4
         self.learning_rate_decay = 0.995
-        self.learning_rate_decay_rate = 25
         # self.model = self.get_model()
         self.batch_size = BATCH_SIZE
         self.epsilon = self.__dict__['epsilon']
@@ -82,16 +80,22 @@ class LinearAgent(Policy):
             minibatch = minibatch[:1] if too_slow else minibatch
             for prev_s, prev_action, reward, new_s, new_action in minibatch:
                 # if the action we get now is different from the action we picked - retrain
-                predictions = self.get_q_values(self.__process_state(prev_s), self.__get_global_direction(prev_s, new_s))
-                if self.ACTIONS[np.argmax(predictions)] != new_action:
-                    self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (
-                                reward + self.gamma * np.max(
-                            self.get_q_values(self.__process_state(new_s), self.__get_global_direction(prev_s, new_s))))
+                # predictions = self.get_q_values(self.__process_state(prev_s, prev_s[1][0]), self.__get_global_direction(prev_s, new_s))
+                # if self.ACTIONS[np.argmax(predictions)] != new_action:
+                global_direction = self.__get_global_direction(prev_s, new_s)
+                q_vals = self.get_q_values(new_s, global_direction)
+                action = Policy.ACTIONS[np.argmax(q_vals)]
+                self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward +
+                                                                                               self.gamma * self.__process_state(self.get_next_state(new_s , action, global_direction),
+                                                                                                                                 self.__get_next_head_pos(new_s, action, global_direction)))
 
         # train on current
-        self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * \
-                       (reward + self.gamma *
-                        np.max(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state))))
+        global_direction = self.__get_global_direction(prev_state, new_state)
+        q_vals = self.get_q_values(new_state, global_direction)
+        action = Policy.ACTIONS[np.argmax(q_vals)]
+        self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward +
+                                                                                       self.gamma * self.__process_state(self.get_next_state(new_state, action, global_direction),
+                                                                                                                         self.__get_next_head_pos(new_state, action, global_direction)))
 
     def __get_global_direction(self, prev_state, current_state):
         prev_head = prev_state[1]
@@ -117,7 +121,7 @@ class LinearAgent(Policy):
 
     def __get_next_head_pos(self, state, action, global_direction):
         """"""
-        head = state[1]
+        head_pos = state[1][0]
         if global_direction == 'N':
             l, r, f = (0, -1), (0, 1), (-1, 0)
         elif global_direction == 'S':
@@ -127,13 +131,13 @@ class LinearAgent(Policy):
         else:
             l, r, f = (1, 0), (-1, 0), (0, -1)
         if action == "L":
-            return head + l
+            return head_pos + l
         elif action == "R":
-            return head + r
-        return head + f
+            return head_pos + r
+        return head_pos + f
 
     # @staticmethod
-    def process_state(self, state):
+    def __process_state(self, state, head_pos):
         """
         Parses the given state into pre-determined features.
         The function encodes the values in the 4 adjacent positions to the snake's head into an indicator vector.
@@ -141,7 +145,7 @@ class LinearAgent(Policy):
         :return: An array of features representing the state.
         """
         features = np.zeros(NUM_FEATURES)
-        board, head_pos = state[0], state[1][0]
+        board = state[0]
         for i in range(-RADIUS, RADIUS + 1):
             for j in range(-RADIUS, RADIUS + 1):
                 ridx = ((head_pos[0] + i + self.board_size[0]) % self.board_size[0])
@@ -184,9 +188,19 @@ class LinearAgent(Policy):
         q_vals = np.zeros(len(Policy.ACTIONS))
         for i, action in enumerate(Policy.ACTIONS):
             next_head_pos = self.__get_next_head_pos(state, action, global_direction)
-            q_vals[i] = np.dot(self.weights, self.__process_state(state)[0])
+            next_state = self.get_next_state(state, action, global_direction)
+            q_vals[i] = np.dot(self.weights, self.__process_state(next_state, next_head_pos))
         return q_vals
 
+    def get_next_state(self, state, action, global_direction):
+        '''
+        TODO: find how to get the next state with the current state and direction, if possible
+        :param state:
+        :param action:
+        :param global_direction:
+        :return:
+        '''
+        return state
 
 # if __name__ == '__main__':
 #     state = np.zeros((20, 60))
