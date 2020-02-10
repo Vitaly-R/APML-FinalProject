@@ -1,6 +1,4 @@
 import numpy as np
-# from keras.models import Sequential
-# from keras.layers import Dense
 from policies.base_policy import Policy
 from collections import deque
 import random as rnd
@@ -9,7 +7,9 @@ LEARNING_RATE = 1e-3
 EPSILON = 1.0
 BATCH_SIZE = 25
 BATCH_THRESHOLD = 300
-NUM_FEATURES = 44  # there are 4 adjacent positions to the head of the snake, each holding one of 11 possible values
+RADIUS = 2
+WINDOW_SIDE_LENGTH = (2 * RADIUS + 1)
+NUM_FEATURES = (WINDOW_SIDE_LENGTH ** 2) * 11  # 11 possible values for each of the elements in the window
 VALUES = 11
 GAMMA = 0.95
 
@@ -41,8 +41,10 @@ class LinearAgent(Policy):
         self.window = 3  # should check different sizes, this is just an initial value
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.999
+        self.epsilon_decay_rate = 25
         self.learning_rate_min = 0.1
         self.learning_rate_decay = 0.995
+        self.learning_rate_decay_rate = 25
         # self.model = self.get_model()
         self.batch_size = BATCH_SIZE
         self.epsilon = self.__dict__['epsilon']
@@ -77,51 +79,19 @@ class LinearAgent(Policy):
         # train on batch
         if len(self.replay_buffer) > BATCH_THRESHOLD:
             minibatch = rnd.sample(self.replay_buffer, self.batch_size)
-            for processed_prev, prev_action, reward, processed_new, new_action in minibatch:
+            minibatch = minibatch[:1] if too_slow else minibatch
+            for prev_s, prev_action, reward, new_s, new_action in minibatch:
                 # if the action we get now is different from the action we picked - retrain
-                predictions = self.get_q_values(processed_new, self.__get_global_direction(processed_prev, processed_new))
+                predictions = self.get_q_values(self.__process_state(prev_s), self.__get_global_direction(prev_s, new_s))
                 if self.ACTIONS[np.argmax(predictions)] != new_action:
                     self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (
                                 reward + self.gamma * np.max(
-                            self.get_q_values(processed_new, self.__get_global_direction(processed_prev, processed_new))))
+                            self.get_q_values(self.__process_state(new_s), self.__get_global_direction(prev_s, new_s))))
 
         # train on current
         self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * \
                        (reward + self.gamma *
                         np.max(self.get_q_values(new_state, self.__get_global_direction(prev_state, new_state))))
-
-        # TODO - If the linear model works, remove the code below
-        # if not len(self.replay_buffer):
-        #     return
-
-        # make batch size smaller to decrease computation time
-        # if too_slow or self.batch_size > round:
-        #     self.batch_size //= 2
-
-        # minibatch = np.random.choice(self.replay_buffer, self.batch_size)
-        # for processed_prev, prev_action, reward, processed_new, new_action in minibatch:
-        #     target = reward + self.gamma * \
-        #              np.amax(self.model.predict(processed_new)[0])
-        #     target_f = self.model.predict(processed_prev)
-        #     target_f[0][new_action] = target
-        #     self.model.fit(processed_prev, target_f, epochs=1, verbose=0)
-        #
-        # if self.epsilon > self.epsilon_min:
-        #     self.epsilon *= self.epsilon_decay
-        #
-        # try:
-        #     if round % 100 == 0:
-        #         if round > self.game_duration - self.score_scope:
-        #             self.log("Rewards in last 100 rounds which counts towards the score: " + str(self.r_sum), 'VALUE')
-        #         else:
-        #             self.log("Rewards in last 100 rounds: " + str(self.r_sum), 'VALUE')
-        #         self.r_sum = 0
-        #     else:
-        #         self.r_sum += reward
-        #
-        # except Exception as e:
-        #     self.log("Something Went Wrong...", 'EXCEPTION')
-        #     self.log(e, 'EXCEPTION')
 
     def __get_global_direction(self, prev_state, current_state):
         prev_head = prev_state[1]
@@ -162,7 +132,8 @@ class LinearAgent(Policy):
             return head + r
         return head + f
 
-    def __feature_function(self, state, next_head_pos):
+    # @staticmethod
+    def process_state(self, state):
         """
         Parses the given state into pre-determined features.
         The function encodes the values in the 4 adjacent positions to the snake's head into an indicator vector.
@@ -170,12 +141,18 @@ class LinearAgent(Policy):
         :return: An array of features representing the state.
         """
         features = np.zeros(NUM_FEATURES)
-        board, head = state
-        pos = next_head_pos[0]
-        features[1 + board[(pos[0] - 1) % self.board_size[0], pos[1]]] = 1  # encoding of the value in the position above the snake's head
-        features[VALUES + 1 + board[pos[0], (pos[1] - 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the left of the snake's head
-        features[2 * VALUES + 1 + board[(pos[0] + 1) % self.board_size[0], pos[1]]] = 1  # encoding of the value in the position below the snake's head
-        features[3 * VALUES + 1 + board[pos[0], (pos[1] + 1) % self.board_size[1]]] = 1  # encoding of the value in the position to the right of the snake's head
+        board, head_pos = state[0], state[1][0]
+        for i in range(-RADIUS, RADIUS + 1):
+            for j in range(-RADIUS, RADIUS + 1):
+                ridx = ((head_pos[0] + i + self.board_size[0]) % self.board_size[0])
+                cidx = (((head_pos[1] + j) + self.board_size[1]) % self.board_size[1])
+                value = board[ridx, cidx]
+                # print(str(value), end=', ')
+                # print(ridx)
+                # print(cidx)
+                # print(value)
+                features[((i + RADIUS) * WINDOW_SIDE_LENGTH + (j + RADIUS)) * WINDOW_SIDE_LENGTH + int(value)] = 1
+            # print()
         return features
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
@@ -203,50 +180,20 @@ class LinearAgent(Policy):
         self.replay_buffer.append((prev_state, prev_action, reward, new_state, action))
         return action
 
-        # processed_new = self.process_state(new_state)
-        # choice = np.random.choice(3, 1, p=self.weights)[0]
-        # new_action = Policy.ACTIONS[choice]
-        # if prev_state is not None:
-        #     processed_prev = self.process_state(prev_state)
-        #     self.replay_buffer.append((processed_prev, prev_action, reward, processed_new, new_action))
-        # return new_action
-
     def get_q_values(self, state, global_direction):
         q_vals = np.zeros(len(Policy.ACTIONS))
         for i, action in enumerate(Policy.ACTIONS):
             next_head_pos = self.__get_next_head_pos(state, action, global_direction)
-            q_vals[i] = np.dot(self.weights, self.__feature_function(state, next_head_pos))
+            q_vals[i] = np.dot(self.weights, self.__process_state(state)[0])
         return q_vals
 
-    def process_state(self, state):
-        """
-        Reduces state dimension.
-        :param state: tuple (board, head) representing the state to process.
-        :return: A tuple (precessed, head) representing a processed state.
-        """
-        board, head = state
-        tl = (max(0, (head[0] - self.window) % 10), max(0, (head[1] - self.window) % 10))
-        # tr = (max(0, (head[0] - self.window) % 10), min(10, (head[1] + self.window + 1) % 10))  # might use later...
-        # bl = (max(0, (head[0] + self.window + 1) % 10), min(10, (head[1] - self.window) % 10))  # might use later...
-        br = (max(0, (head[0] + self.window + 1) % 10), max(0, (head[0] + self.window + 1) % 10))
-        vertical = tl[0] < br[0]
-        horizontal = tl[1] < br[1]
-        if vertical and horizontal:
-            window = board[tl[0]: br[0], tl[1]: br[1]]
-        elif vertical and not horizontal:
-            window = np.concatenate((board[tl[0]: br[0], tl[1]: self.board_size[1]], board[tl[0]: br[0], : br[1]]),
-                                    axis=1)
-        elif horizontal and not vertical:
-            window = np.concatenate((board[tl: self.board_size[0], tl[1]: br[1]], board[: br[0], tl[1]: br[1]]))
-        else:
-            window = np.concatenate((np.concatenate((board[tl[0]: self.board_size[0], tl[1]: self.board_size[1]],
-                                                     board[tl[0]: self.board_size[0], 0: br[1]]), axis=1),
-                                     np.concatenate((board[: br[0], tl[1]: self.board_size[1]],
-                                                     board[: br[0], : br[1]]), axis=1)))
-        return window, head
 
-    # def get_model(self):
-    #     return some tensorflow/keras model with the functions predict and fit
-        # model = Sequential()
-        # model.add(Dense(3, activation='linear'))
-        # return model
+# if __name__ == '__main__':
+#     state = np.zeros((20, 60))
+#     for i in range(20):
+#         state[i, :] = i % 11 - 1
+#     head = Snake.Position([19, 59], [20, 60])
+#     features = LinearAgent.process_state((state, [head]), [20, 60])
+#     print(features.shape)
+#     print(np.argwhere(features == 1))
+
