@@ -3,15 +3,15 @@ from policies.base_policy import Policy
 from collections import deque
 import random as rnd
 
-LEARNING_RATE = 0.1
+VALUES = 11
+LEARNING_RATE = 0.2
 EPSILON = 1.0
 BATCH_SIZE = 25
-BATCH_THRESHOLD = 300
+BATCH_THRESHOLD = 500
 RADIUS = 2
 WINDOW_SIDE_LENGTH = (2 * RADIUS + 1)
-NUM_FEATURES = (WINDOW_SIDE_LENGTH ** 2) * 11  # 11 possible values for each of the elements in the window
-VALUES = 11
-GAMMA = 0.95
+NUM_FEATURES = (WINDOW_SIDE_LENGTH ** 2) * VALUES  # 11 possible values for each of the elements in the window
+GAMMA = 0.8
 
 
 class LinearAgent(Policy):
@@ -39,9 +39,9 @@ class LinearAgent(Policy):
         self.r_sum = 0
         self.replay_buffer = deque(maxlen=1000)
         self.window = 3  # should check different sizes, this is just an initial value
-        self.epsilon_min = 0.05
-        self.epsilon_decay = 0.999
-        self.learning_rate_min = 1e-4
+        self.epsilon_min = 0.007
+        self.epsilon_decay = 0.99
+        self.learning_rate_min = 1e-2
         self.learning_rate_decay = 0.995
         # self.model = self.get_model()
         self.batch_size = BATCH_SIZE
