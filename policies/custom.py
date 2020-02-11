@@ -1,21 +1,29 @@
 from policies.base_policy import Policy
 from keras import Sequential
-from keras.layers import Flatten, Dense
+from keras.layers import Dense
 from keras.optimizers import Adam
 from collections import deque
 import numpy as np
 import random as r
 
 
-INITIAL_EPSILON = 1
+# todo: add the following to the answers file:
+# The weights of the target model need to be updated because the main model learns from playing the game in relation to the target model,
+# but we also need to update the target model to improve it based on the weights of the main model.
+
+
+VALUES = 11
+LEARNING_RATE = 1e-2
+BATCH_SIZE = 10
+MAX_BATCH_SIZE = 20
+BATCH_THRESHOLD = 300
+RADIUS = 2
+GAMMA = 0.1
+INITIAL_EPSILON = 1.0
 EPSILON_DECAY = 0.99
 EPSILON_MIN = 0.01
-LEARNING_RATE = 1e-2
-RADIUS = 5
 WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 NUM_ELEMENTS = WINDOW_SIDE_LENGTH ** 2
-GAMMA = 0.95
-BATCH_SIZE = 32
 
 
 class CustomPolicy(Policy):
@@ -25,6 +33,9 @@ class CustomPolicy(Policy):
         :param policy_args: an arg -> string value map as received in command line.
         :return: A map of string -> value after casting to useful objects, these will be added as members to the policy
         """
+        policy_args['lr'] = float(policy_args['lr']) if 'lr' in policy_args else LEARNING_RATE
+        policy_args['epsilon'] = float(policy_args['epsilon']) if 'epsilon' in policy_args else INITIAL_EPSILON
+        policy_args['gamma'] = float(policy_args['gamma']) if 'gamma' in policy_args else GAMMA
         return policy_args
 
     def init_run(self):
@@ -37,10 +48,13 @@ class CustomPolicy(Policy):
         """
         self.model = self.create_model()
         self.target_model = self.create_model()
-        self.model.predict(np.zeros((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1)))
-        self.epsilon = INITIAL_EPSILON
-        self.memory = deque(maxlen=2000)
-        self.t = 0.125
+        self.model.predict(np.zeros((1, NUM_ELEMENTS)))
+        self.memory = deque(maxlen=300)
+        self.batch_size = BATCH_SIZE
+        self.t = 0.125  # a learning rate for the weights of the target model in relation to the main model
+        self.epsilon = self.__dict__['epsilon']
+        self.lr = self.__dict__['lr']
+        self.gamma = self.__dict__['gamma']
 
     def learn(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -60,21 +74,26 @@ class CustomPolicy(Policy):
         """
         if self.epsilon > EPSILON_MIN:
             self.epsilon *= EPSILON_DECAY
-        if len(self.memory) < BATCH_SIZE:
-            return
-        samples = r.sample(self.memory, BATCH_SIZE)
-        for sample in samples:
-            state, action, reward, next_state = sample
-            target = self.target_model.predict(state)
-            q_future = max(self.target_model.predict(next_state)[0])
-            target[0][self.ACTIONS.index(action)] = reward + GAMMA * q_future
-            self.model.fit(state, target, epochs=1, verbose=0)
-        
-        weights = self.model.get_weights()
-        target_weights = self.target_model.get_weights()
-        for i in range(len(target_weights)):
-            target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
-        self.target_model.set_weights(target_weights)
+        if len(self.memory) > BATCH_THRESHOLD:
+            # In order for the model not to start training too early, we wait until enough states are saved.
+            if too_slow:
+                self.batch_size = self.batch_size // 2
+            elif not round % 100:  # to prevent from happening too often
+                self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
+            samples = r.sample(self.memory, self.batch_size)
+            for sample in samples:
+                state, action, reward, next_state = sample
+                target = self.target_model.predict(state)  # q-values of the target model for each action
+                q_future = max(self.target_model.predict(next_state)[0])  # the max q-value possible from the next state
+                target[0][self.ACTIONS.index(action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
+                self.model.fit(state, target, epochs=1, verbose=0)  # training and updating the weights of the main model for the target activation.
+
+            # updating the weights of the target model in relation to the main model.
+            weights = self.model.get_weights()
+            target_weights = self.target_model.get_weights()
+            for i in range(len(target_weights)):
+                target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
+            self.target_model.set_weights(target_weights)
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -92,9 +111,9 @@ class CustomPolicy(Policy):
                         computation time smaller (by lowering the batch size for example)...
         :return: an action (from Policy.Actions) in response to the new_state.
         """
-        processed_prev_state = self.__process_state(prev_state) if prev_state is not None else None
         processed_new_state = self.__process_state(new_state)
         if prev_state is not None:
+            processed_prev_state = self.__process_state(prev_state)
             self.memory.append([processed_prev_state, prev_action, reward, processed_new_state])
         if np.random.random() < self.epsilon or prev_state is None:
             return r.sample(self.ACTIONS, 1)[0]
@@ -115,7 +134,7 @@ class CustomPolicy(Policy):
 
     def create_model(self):
         model = Sequential()
-        model.add(Dense(512, activation='tanh'))
+        model.add(Dense(256, activation='tanh', input_shape=(NUM_ELEMENTS, )))
         model.add(Dense(len(self.ACTIONS)))
-        model.compile(optimizer=Adam(lr=LEARNING_RATE), loss='mean_squared_error')
+        model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
         return model
