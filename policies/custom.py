@@ -64,9 +64,9 @@ class CustomPolicy(Policy):
             return
         samples = r.sample(self.memory, BATCH_SIZE)
         for sample in samples:
-            state, action, reward, new_state = sample
+            state, action, reward, next_state = sample
             target = self.target_model.predict(state)
-            q_future = max(self.target_model.predict(self.__process_state(new_state))[0])
+            q_future = max(self.target_model.predict(next_state)[0])
             target[0][self.ACTIONS.index(action)] = reward + GAMMA * q_future
             self.model.fit(state, target, epochs=1, verbose=0)
         
@@ -92,7 +92,7 @@ class CustomPolicy(Policy):
                         computation time smaller (by lowering the batch size for example)...
         :return: an action (from Policy.Actions) in response to the new_state.
         """
-        processed_prev_state = self.__process_state(prev_state)
+        processed_prev_state = self.__process_state(prev_state) if prev_state is not None else None
         processed_new_state = self.__process_state(new_state)
         if prev_state is not None:
             self.memory.append([processed_prev_state, prev_action, reward, processed_new_state])
