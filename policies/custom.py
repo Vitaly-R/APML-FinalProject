@@ -1,6 +1,6 @@
 from policies.base_policy import Policy
 from keras import Sequential
-from keras.layers import Flatten, Dense
+from keras.layers import Input, Dense
 from keras.optimizers import Adam
 from collections import deque
 import numpy as np
@@ -11,7 +11,7 @@ INITIAL_EPSILON = 1
 EPSILON_DECAY = 0.99
 EPSILON_MIN = 0.01
 LEARNING_RATE = 1e-2
-RADIUS = 5
+RADIUS = 3
 WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 NUM_ELEMENTS = WINDOW_SIDE_LENGTH ** 2
 GAMMA = 0.95
@@ -37,7 +37,7 @@ class CustomPolicy(Policy):
         """
         self.model = self.create_model()
         self.target_model = self.create_model()
-        self.model.predict(np.zeros((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1)))
+        self.model.predict(np.zeros((1, NUM_ELEMENTS)))
         self.epsilon = INITIAL_EPSILON
         self.memory = deque(maxlen=2000)
         self.t = 0.125
@@ -115,7 +115,7 @@ class CustomPolicy(Policy):
 
     def create_model(self):
         model = Sequential()
-        model.add(Dense(512, activation='tanh'))
+        model.add(Dense(256, activation='tanh', input_shape=(NUM_ELEMENTS, )))
         model.add(Dense(len(self.ACTIONS)))
         model.compile(optimizer=Adam(lr=LEARNING_RATE), loss='mean_squared_error')
         return model
