@@ -4,14 +4,15 @@ from collections import deque
 import random as rnd
 
 VALUES = 11
-LEARNING_RATE = 0.2
+LEARNING_RATE = 1e-2
 EPSILON = 1.0
-BATCH_SIZE = 25
-BATCH_THRESHOLD = 500
+BATCH_SIZE = 10
+MAX_BATCH_SIZE = 20
+BATCH_THRESHOLD = 300
 RADIUS = 2
 WINDOW_SIDE_LENGTH = (2 * RADIUS + 1)
 NUM_FEATURES = (WINDOW_SIDE_LENGTH ** 2) * VALUES  # 11 possible values for each of the elements in the window
-GAMMA = 0.8
+GAMMA = 0.1
 
 
 class LinearAgent(Policy):
@@ -37,12 +38,12 @@ class LinearAgent(Policy):
         """
         self.weights = np.random.random(NUM_FEATURES).astype('float32')
         self.r_sum = 0
-        self.replay_buffer = deque(maxlen=1000)
+        self.replay_buffer = deque(maxlen=400)
         self.window = 3  # should check different sizes, this is just an initial value
-        self.epsilon_min = 0.007
-        self.epsilon_decay = 0.99
-        self.learning_rate_min = 1e-2
-        self.learning_rate_decay = 0.995
+        self.epsilon_min = 0.03
+        self.epsilon_decay = 0.995
+        self.learning_rate_min = 1e-4
+        self.learning_rate_decay = 0.99
         # self.model = self.get_model()
         self.batch_size = BATCH_SIZE
         self.epsilon = self.__dict__['epsilon']
@@ -76,26 +77,22 @@ class LinearAgent(Policy):
 
         # train on batch
         if len(self.replay_buffer) > BATCH_THRESHOLD:
+            if too_slow:
+                self.batch_size = round(self.batch_size / 2)
+            elif not round % 100:  # to prevent from happening too often
+                self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
             minibatch = rnd.sample(self.replay_buffer, self.batch_size)
-            minibatch = minibatch[:1] if too_slow else minibatch
             for prev_s, prev_action, reward, new_s, new_action in minibatch:
-                # if the action we get now is different from the action we picked - retrain
-                # predictions = self.get_q_values(self.__process_state(prev_s, prev_s[1][0]), self.__get_global_direction(prev_s, new_s))
-                # if self.ACTIONS[np.argmax(predictions)] != new_action:
                 global_direction = self.__get_global_direction(prev_s, new_s)
-                q_vals = self.get_q_values(new_s, global_direction)
-                action = Policy.ACTIONS[np.argmax(q_vals)]
+                max_q_val = np.nanmax(self.get_q_values(new_s, global_direction))
                 self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward +
-                                                                                               self.gamma * self.__process_state(self.get_next_state(new_s , action, global_direction),
-                                                                                                                                 self.__get_next_head_pos(new_s, action, global_direction)))
+                                                                                               self.gamma * max_q_val) * self.__process_state(prev_s, prev_s[1][0])
 
         # train on current
         global_direction = self.__get_global_direction(prev_state, new_state)
-        q_vals = self.get_q_values(new_state, global_direction)
-        action = Policy.ACTIONS[np.argmax(q_vals)]
+        max_q_val = np.nanmax(self.get_q_values(new_state, global_direction))
         self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward +
-                                                                                       self.gamma * self.__process_state(self.get_next_state(new_state, action, global_direction),
-                                                                                                                         self.__get_next_head_pos(new_state, action, global_direction)))
+                                                                                       self.gamma * max_q_val) * self.__process_state(prev_state, prev_state[1][0])
 
     def __get_global_direction(self, prev_state, current_state):
         prev_head = prev_state[1]
