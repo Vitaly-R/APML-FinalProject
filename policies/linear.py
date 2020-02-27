@@ -93,6 +93,20 @@ class LinearAgent(Policy):
         max_q_val = np.nanmax(self.get_q_values(new_state, global_direction))
         self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward +
                                                                                        self.gamma * max_q_val) * self.__process_state(prev_state, prev_state[1][0])
+        # normalize weights
+        if round > 2 * BATCH_THRESHOLD:
+            norm = np.linalg.norm(self.weights)
+            if norm:
+                self.weights /= norm
+
+        #
+        # if not round % 500:  # TODO: delete this
+        #     # print weights
+        #     # print(self.weights)
+        #     print("max weight: " + str(np.max(self.weights)))
+        #     print("min weight: " + str(np.min(self.weights)))
+        #     print("positives amount: " + str(len(self.weights[self.weights > 0])))
+        #     print("negatives amount: " + str(len(self.weights[self.weights <= 0])))
 
     def __get_global_direction(self, prev_state, current_state):
         prev_head = prev_state[1]

@@ -12,8 +12,12 @@ TODOs:
 * find a way to use decay on learning rate while having constant MIN learning rate
 
 
+* if we're score_scope away from the end - stop exploration to maximize results
+
+
 
 USEFUL SOURCES:
 https://github.com/keon/deep-q-learning/blob/master/dqn.py
 
 https://github.com/keon/deep-q-learning
+

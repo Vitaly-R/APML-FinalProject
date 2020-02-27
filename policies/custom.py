@@ -2,6 +2,7 @@ from policies.base_policy import Policy
 from keras import Sequential
 from keras.layers import Dense
 from keras.optimizers import Adam
+from keras.regularizers import l2
 from collections import deque
 import numpy as np
 import random as r
@@ -13,15 +14,15 @@ import random as r
 
 
 VALUES = 11
-LEARNING_RATE = 1e-2
+LEARNING_RATE = 1e-3
 BATCH_SIZE = 10
-MAX_BATCH_SIZE = 20
-BATCH_THRESHOLD = 300
+MAX_BATCH_SIZE = 30
+BATCH_THRESHOLD = 500
 RADIUS = 2
-GAMMA = 0.1
+GAMMA = 0.95
 INITIAL_EPSILON = 1.0
-EPSILON_DECAY = 0.99
-EPSILON_MIN = 0.01
+EPSILON_DECAY = 0.999
+EPSILON_MIN = 0.05
 WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 NUM_ELEMENTS = WINDOW_SIDE_LENGTH ** 2
 
@@ -94,6 +95,18 @@ class CustomPolicy(Policy):
             for i in range(len(target_weights)):
                 target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
             self.target_model.set_weights(target_weights)
+            print(len(self.model.get_weights()))  # TODO: why doesn't this print?
+        # # # TODO: delete this  -- DOESNT WORK FOR NOW, list of arrays?
+        # if round > BATCH_THRESHOLD and not round % 500:
+        #     # print weights
+        #     # print(self.weights)
+        #     weights = self.model.get_weights()
+        #     for w_l in weights:
+        #         print("max weight: " + str(np.max(w_l)))
+        #         print("min weight: " + str(np.min(w_l)))
+        #         print("positives amount: " + str(len(w_l[w_l > 0])))
+        #         print("negatives amount: " + str(len(w_l[w_l <= 0])))
+        #         print("**********************")
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -134,7 +147,13 @@ class CustomPolicy(Policy):
 
     def create_model(self):
         model = Sequential()
-        model.add(Dense(256, activation='tanh', input_shape=(NUM_ELEMENTS, )))
+        model.add(Dense(128, activation='tanh', input_shape=(NUM_ELEMENTS, )))
+        model.add(Dense(128, activation='tanh'))
+        model.add(Dense(64, activation='tanh'))
+        model.add(Dense(64, activation='tanh', kernel_regularizer=l2()))
+        # model.add(Dense(128, activation='tanh', kernel_regularizer=l2()))
+        # model.add(Dense(256, activation='tanh', input_shape=(NUM_ELEMENTS, )))
+        # model.add(Dense(128, activation='tanh'))
         model.add(Dense(len(self.ACTIONS)))
-        model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
+        model.compile(optimizer=Adam(lr=self.lr, decay=1e-5), loss='mean_squared_error')
         return model
