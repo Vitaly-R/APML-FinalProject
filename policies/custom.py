@@ -1,6 +1,6 @@
 from policies.base_policy import Policy
 from keras import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, Conv2D, Flatten
 from keras.optimizers import Adam
 from keras.regularizers import l2
 from collections import deque
@@ -14,17 +14,18 @@ import random as r
 
 
 VALUES = 11
-LEARNING_RATE = 1e-3
-BATCH_SIZE = 10
+LEARNING_RATE = 0.0001
+BATCH_SIZE = 20
 MAX_BATCH_SIZE = 30
 BATCH_THRESHOLD = 500
-RADIUS = 2
-GAMMA = 0.95
+RADIUS = 7
+GAMMA = 0.85
 INITIAL_EPSILON = 1.0
 EPSILON_DECAY = 0.999
 EPSILON_MIN = 0.05
 WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 NUM_ELEMENTS = WINDOW_SIDE_LENGTH ** 2
+MODEL = 0  # An indicator of weather to use a convolutional model, used solely for testing
 
 
 class CustomPolicy(Policy):
@@ -37,6 +38,7 @@ class CustomPolicy(Policy):
         policy_args['lr'] = float(policy_args['lr']) if 'lr' in policy_args else LEARNING_RATE
         policy_args['epsilon'] = float(policy_args['epsilon']) if 'epsilon' in policy_args else INITIAL_EPSILON
         policy_args['gamma'] = float(policy_args['gamma']) if 'gamma' in policy_args else GAMMA
+        policy_args['model'] = int(policy_args['model']) if 'model' in policy_args else MODEL
         return policy_args
 
     def init_run(self):
@@ -47,9 +49,18 @@ class CustomPolicy(Policy):
         to load your pickled model and set the variables accordingly, if the
         game uses a saved model and is not a training session.
         """
-        self.model = self.create_model()
-        self.target_model = self.create_model()
-        self.model.predict(np.zeros((1, NUM_ELEMENTS)))
+        if self.__dict__['model'] == 0:
+            print('creating dense network')
+            self.model = self.create_model_1()
+            self.target_model = self.create_model_1()
+            self.model.predict(np.zeros((1, NUM_ELEMENTS)))
+            self.__process_state = self.__process_state_1
+        else:
+            print('creating convolutional network')
+            self.model = self.create_model_2()
+            self.target_model = self.create_model_2()
+            self.model.predict(np.zeros((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1)))
+            self.__process_state = self.__process_state_2
         self.memory = deque(maxlen=300)
         self.batch_size = BATCH_SIZE
         self.t = 0.125  # a learning rate for the weights of the target model in relation to the main model
@@ -132,7 +143,7 @@ class CustomPolicy(Policy):
             return r.sample(self.ACTIONS, 1)[0]
         return self.ACTIONS[np.argmax(self.model.predict(processed_new_state))]
 
-    def __process_state(self, state):
+    def __process_state_1(self, state):
         """
         Extracts the part of the board which is within RADIUS around the snake.
         :param state: A tuple (board, head) representing the state.
@@ -145,15 +156,36 @@ class CustomPolicy(Policy):
                 window[i + RADIUS, j + RADIUS] = board[(head_pos[0] + i + self.board_size[0]) % self.board_size[0], (head_pos[1] + j + self.board_size[1]) % self.board_size[1]]
         return window.reshape((1, NUM_ELEMENTS))
 
-    def create_model(self):
+    def __process_state_2(self, state):
+        """
+        Extracts the part of the board which is within RADIUS around the snake.
+        :param state: A tuple (board, head) representing the state.
+        :return: A numpy array representing the window.
+        """
+        board, head_pos = state[0], state[1][0]
+        window = np.zeros((WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH))
+        for i in range(-RADIUS, RADIUS + 1):
+            for j in range(-RADIUS, RADIUS + 1):
+                window[i + RADIUS, j + RADIUS] = board[(head_pos[0] + i + self.board_size[0]) % self.board_size[0], (head_pos[1] + j + self.board_size[1]) % self.board_size[1]]
+        return window.reshape((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1))
+
+    def create_model_1(self):
         model = Sequential()
         model.add(Dense(128, activation='tanh', input_shape=(NUM_ELEMENTS, )))
         model.add(Dense(128, activation='tanh'))
         model.add(Dense(64, activation='tanh'))
         model.add(Dense(64, activation='tanh', kernel_regularizer=l2()))
-        # model.add(Dense(128, activation='tanh', kernel_regularizer=l2()))
-        # model.add(Dense(256, activation='tanh', input_shape=(NUM_ELEMENTS, )))
-        # model.add(Dense(128, activation='tanh'))
         model.add(Dense(len(self.ACTIONS)))
-        model.compile(optimizer=Adam(lr=self.lr, decay=1e-5), loss='mean_squared_error')
+        model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
+        return model
+
+    def create_model_2(self):
+        model = Sequential()
+        model.add(Conv2D(filters=32, kernel_size=5, activation='tanh'))
+        model.add(Conv2D(filters=64, kernel_size=3, activation='tanh'))
+        model.add(Flatten())
+        model.add(Dense(256, activation='tanh'))
+        model.add(Dense(128, activation='tanh'))
+        model.add(Dense(len(self.ACTIONS)))
+        model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
         return model
