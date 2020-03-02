@@ -14,9 +14,10 @@ import random as r
 
 
 VALUES = 11
-LEARNING_RATE = 0.0001
-BATCH_SIZE = 20
-MAX_BATCH_SIZE = 30
+LEARNING_RATE = 1e-3
+BATCH_SIZE = 10
+MAX_BATCH_SIZE = 20
+MIN_BATCH_SIZE = 5
 BATCH_THRESHOLD = 500
 RADIUS = 7
 GAMMA = 0.85
@@ -55,13 +56,19 @@ class CustomPolicy(Policy):
             self.target_model = self.create_model_1()
             self.model.predict(np.zeros((1, NUM_ELEMENTS)))
             self.__process_state = self.__process_state_1
-        else:
+        elif self.__dict__['model'] == 1:
             print('creating convolutional network')
             self.model = self.create_model_2()
             self.target_model = self.create_model_2()
             self.model.predict(np.zeros((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1)))
             self.__process_state = self.__process_state_2
-        self.memory = deque(maxlen=300)
+        else:
+            print('creating convolutional network')
+            self.model = self.create_model_3()
+            self.target_model = self.create_model_3()
+            self.model.predict(np.zeros((1, NUM_ELEMENTS)))
+            self.__process_state = self.__process_state_1
+        self.memory = deque(maxlen=2*BATCH_THRESHOLD)
         self.batch_size = BATCH_SIZE
         self.t = 0.125  # a learning rate for the weights of the target model in relation to the main model
         self.epsilon = self.__dict__['epsilon']
@@ -86,10 +93,10 @@ class CustomPolicy(Policy):
         """
         if self.epsilon > EPSILON_MIN:
             self.epsilon *= EPSILON_DECAY
-        if len(self.memory) > BATCH_THRESHOLD:
+        if round > BATCH_THRESHOLD:
             # In order for the model not to start training too early, we wait until enough states are saved.
             if too_slow:
-                self.batch_size = self.batch_size // 2
+                self.batch_size = max(self.batch_size // 2, MIN_BATCH_SIZE)
             elif not round % 100:  # to prevent from happening too often
                 self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
             samples = r.sample(self.memory, self.batch_size)
@@ -106,7 +113,6 @@ class CustomPolicy(Policy):
             for i in range(len(target_weights)):
                 target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
             self.target_model.set_weights(target_weights)
-            print(len(self.model.get_weights()))  # TODO: why doesn't this print?
         # # # TODO: delete this  -- DOESNT WORK FOR NOW, list of arrays?
         # if round > BATCH_THRESHOLD and not round % 500:
         #     # print weights
@@ -186,6 +192,13 @@ class CustomPolicy(Policy):
         model.add(Flatten())
         model.add(Dense(256, activation='tanh'))
         model.add(Dense(128, activation='tanh'))
+        model.add(Dense(len(self.ACTIONS)))
+        model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
+        return model
+
+    def create_model_3(self):
+        model = Sequential()
+        model.add(Dense(256, activation='tanh', kernel_regularizer=l2()))
         model.add(Dense(len(self.ACTIONS)))
         model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
         return model
