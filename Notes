@@ -1,18 +1,13 @@
 Current Tasks:
-* current custom is learning very slowly - why? how does each hyper parameter effect the result? can we limit the hyper
-    parameters better? can we use more techniques?
-* find the optimal hyperparameters
-
-
+* check other values of epsilon min (lower values, 0.03, 0.05)
+* check gamma values (0.10,0.05)
+* try and change the batch size to update less frequently (every 200 rounds or something)
+* test deeper and shallower architectures.
 
 TODOs:  (after current)
 
-* check values of q function -- does it reach nan values because it gets too big?
-
-* find a way to use decay on learning rate while having constant MIN learning rate
-
 * if we're score_scope away from the end - stop exploration to maximize results
-
+* all tests should be against 4 avoid agents
 
 
 USEFUL SOURCES:
@@ -21,14 +16,4 @@ https://github.com/keon/deep-q-learning/blob/master/dqn.py
 https://github.com/keon/deep-q-learning
 
 
-
-
-
-Tuesday morning:
-
-* make epsilon min higher -- will let you use random acts at later rounds  +++++++++++
-
-* update target only once every couple of learns  +++++++++++++++++
-
-* start decay only after a while of random acts - not from first learn +++++++++
 
