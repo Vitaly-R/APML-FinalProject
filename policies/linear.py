@@ -8,6 +8,7 @@ LEARNING_RATE = 1e-2
 EPSILON = 1.0
 BATCH_SIZE = 10
 MAX_BATCH_SIZE = 20
+MIN_BATCH_SIZE = 3
 BATCH_THRESHOLD = 300
 RADIUS = 2
 WINDOW_SIDE_LENGTH = (2 * RADIUS + 1)
@@ -38,7 +39,7 @@ class LinearAgent(Policy):
         """
         self.weights = np.random.random(NUM_FEATURES).astype('float32')
         self.r_sum = 0
-        self.replay_buffer = deque(maxlen=400)
+        self.replay_buffer = deque(maxlen=BATCH_THRESHOLD + 100)
         self.window = 3  # should check different sizes, this is just an initial value
         self.epsilon_min = 0.03
         self.epsilon_decay = 0.995
@@ -76,9 +77,9 @@ class LinearAgent(Policy):
             self.learning_rate *= self.learning_rate_decay
 
         # train on batch
-        if len(self.replay_buffer) > BATCH_THRESHOLD:
+        if round > BATCH_THRESHOLD:
             if too_slow:
-                self.batch_size = round(self.batch_size / 2)
+                self.batch_size = max(self.batch_size // 2, MIN_BATCH_SIZE)
             elif not round % 100:  # to prevent from happening too often
                 self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
             minibatch = rnd.sample(self.replay_buffer, self.batch_size)
@@ -93,6 +94,20 @@ class LinearAgent(Policy):
         max_q_val = np.nanmax(self.get_q_values(new_state, global_direction))
         self.weights = (1 - self.learning_rate) * self.weights + self.learning_rate * (reward +
                                                                                        self.gamma * max_q_val) * self.__process_state(prev_state, prev_state[1][0])
+        # normalize weights
+        if round > 2 * BATCH_THRESHOLD:
+            norm = np.linalg.norm(self.weights)
+            if norm:
+                self.weights /= norm
+
+        #
+        # if not round % 500:  # TODO: delete this
+        #     # print weights
+        #     # print(self.weights)
+        #     print("max weight: " + str(np.max(self.weights)))
+        #     print("min weight: " + str(np.min(self.weights)))
+        #     print("positives amount: " + str(len(self.weights[self.weights > 0])))
+        #     print("negatives amount: " + str(len(self.weights[self.weights <= 0])))
 
     def __get_global_direction(self, prev_state, current_state):
         prev_head = prev_state[1]

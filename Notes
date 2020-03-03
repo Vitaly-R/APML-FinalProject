@@ -1,15 +1,18 @@
+Current Tasks:
+* current custom is learning very slowly - why? how does each hyper parameter effect the result? can we limit the hyper
+    parameters better? can we use more techniques?
+* find the optimal hyperparameters
 
 
-TODOs:
-* check loss function calculation - should it be like the linear model's loss function? (adding gradient multiplication)
+
+TODOs:  (after current)
+* custom model - target update in learn - why do we use [0] instead of the index related to the state? what does the [0] represent?
 
 * check values of q function -- does it reach nan values because it gets too big?
 
-* what else can you take from the linear model?
-
-* check the useful sources for useful code
-
 * find a way to use decay on learning rate while having constant MIN learning rate
+
+* if we're score_scope away from the end - stop exploration to maximize results
 
 
 
@@ -17,3 +20,4 @@ USEFUL SOURCES:
 https://github.com/keon/deep-q-learning/blob/master/dqn.py
 
 https://github.com/keon/deep-q-learning
+
