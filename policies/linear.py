@@ -162,13 +162,8 @@ class LinearAgent(Policy):
             for j in range(-RADIUS, RADIUS + 1):
                 ridx = ((head_pos[0] + i + self.board_size[0]) % self.board_size[0])
                 cidx = (((head_pos[1] + j) + self.board_size[1]) % self.board_size[1])
-                value = board[ridx, cidx]
-                # print(str(value), end=', ')
-                # print(ridx)
-                # print(cidx)
-                # print(value)
+                value = board[ridx, cidx] + 1  # +1 to shift it to range 0-10
                 features[((i + RADIUS) * WINDOW_SIDE_LENGTH + (j + RADIUS)) * WINDOW_SIDE_LENGTH + int(value)] = 1
-            # print()
         return features
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):

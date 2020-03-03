@@ -6,7 +6,6 @@ Current Tasks:
 
 
 TODOs:  (after current)
-* custom model - target update in learn - why do we use [0] instead of the index related to the state? what does the [0] represent?
 
 * check values of q function -- does it reach nan values because it gets too big?
 
@@ -20,4 +19,16 @@ USEFUL SOURCES:
 https://github.com/keon/deep-q-learning/blob/master/dqn.py
 
 https://github.com/keon/deep-q-learning
+
+
+
+
+
+Tuesday morning:
+
+* make epsilon min higher -- will let you use random acts at later rounds  +++++++++++
+
+* update target only once every couple of learns  +++++++++++++++++
+
+* start decay only after a while of random acts - not from first learn +++++++++
 

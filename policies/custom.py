@@ -3,6 +3,7 @@ from keras import Sequential
 from keras.layers import Dense, Conv2D, Flatten
 from keras.optimizers import Adam
 from keras.regularizers import l2
+from keras.utils import to_categorical
 from collections import deque
 import numpy as np
 import random as r
@@ -15,15 +16,15 @@ import random as r
 
 VALUES = 11
 LEARNING_RATE = 1e-3
-BATCH_SIZE = 10
-MAX_BATCH_SIZE = 20
-MIN_BATCH_SIZE = 5
-BATCH_THRESHOLD = 500
-RADIUS = 7
-GAMMA = 0.85
+BATCH_SIZE = 5
+MAX_BATCH_SIZE = 10
+MIN_BATCH_SIZE = 1
+BATCH_THRESHOLD = 300
+RADIUS = 2
+GAMMA = 0.15
 INITIAL_EPSILON = 1.0
 EPSILON_DECAY = 0.999
-EPSILON_MIN = 0.05
+EPSILON_MIN = 0.10
 WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 NUM_ELEMENTS = WINDOW_SIDE_LENGTH ** 2
 MODEL = 0  # An indicator of weather to use a convolutional model, used solely for testing
@@ -63,11 +64,11 @@ class CustomPolicy(Policy):
             self.model.predict(np.zeros((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1)))
             self.__process_state = self.__process_state_2
         else:
-            print('creating convolutional network')
-            self.model = self.create_model_3()
-            self.target_model = self.create_model_3()
-            self.model.predict(np.zeros((1, NUM_ELEMENTS)))
-            self.__process_state = self.__process_state_1
+            print('creating dense network')
+            self.model = self.create_model_4()
+            self.target_model = self.create_model_4()
+            self.model.predict(np.zeros((1, NUM_ELEMENTS * VALUES)))
+            self.__process_state = self.__process_state_4
         self.memory = deque(maxlen=2*BATCH_THRESHOLD)
         self.batch_size = BATCH_SIZE
         self.t = 0.125  # a learning rate for the weights of the target model in relation to the main model
@@ -91,28 +92,32 @@ class CustomPolicy(Policy):
                         policy for a few rounds in a row. you may use this to make your
                         computation time smaller (by lowering the batch size for example).
         """
-        if self.epsilon > EPSILON_MIN:
-            self.epsilon *= EPSILON_DECAY
         if round > BATCH_THRESHOLD:
+            self.epsilon = self.epsilon if self.epsilon <= EPSILON_MIN else self.epsilon * EPSILON_DECAY
+
             # In order for the model not to start training too early, we wait until enough states are saved.
             if too_slow:
                 self.batch_size = max(self.batch_size // 2, MIN_BATCH_SIZE)
             elif not round % 100:  # to prevent from happening too often
                 self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
+            # print("****************** batch size: " + str(self.batch_size))
+
             samples = r.sample(self.memory, self.batch_size)
             for sample in samples:
                 state, action, reward, next_state = sample
                 target = self.target_model.predict(state)  # q-values of the target model for each action
                 q_future = max(self.target_model.predict(next_state)[0])  # the max q-value possible from the next state
+                # print("*************** q values: " + str(target))
                 target[0][self.ACTIONS.index(action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
                 self.model.fit(state, target, epochs=1, verbose=0)  # training and updating the weights of the main model for the target activation.
 
-            # updating the weights of the target model in relation to the main model.
-            weights = self.model.get_weights()
-            target_weights = self.target_model.get_weights()
-            for i in range(len(target_weights)):
-                target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
-            self.target_model.set_weights(target_weights)
+            if not round % 50:
+                # updating the weights of the target model in relation to the main model.
+                weights = self.model.get_weights()
+                target_weights = self.target_model.get_weights()
+                for i in range(len(target_weights)):
+                    target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
+                self.target_model.set_weights(target_weights)
         # # # TODO: delete this  -- DOESNT WORK FOR NOW, list of arrays?
         # if round > BATCH_THRESHOLD and not round % 500:
         #     # print weights
@@ -175,11 +180,31 @@ class CustomPolicy(Policy):
                 window[i + RADIUS, j + RADIUS] = board[(head_pos[0] + i + self.board_size[0]) % self.board_size[0], (head_pos[1] + j + self.board_size[1]) % self.board_size[1]]
         return window.reshape((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1))
 
+    def __process_state_3(self, state):
+        """
+        Extracts the part of the board which is within RADIUS around the snake.
+        :param state: A tuple (board, head) representing the state.
+        :return: A numpy array representing the window.
+        """
+        board, head_pos = state[0], state[1][0]
+        window = np.zeros((WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH))
+        for i in range(-RADIUS, RADIUS + 1):
+            for j in range(-RADIUS, RADIUS + 1):
+                window[i + RADIUS, j + RADIUS] = board[(head_pos[0] + i + self.board_size[0]) % self.board_size[0], (head_pos[1] + j + self.board_size[1]) % self.board_size[1]]
+        return to_categorical(window, num_classes=VALUES).reshape((1, NUM_ELEMENTS * VALUES))
+
+    def __process_state_4(self, state):
+        board, head_pos = state[0], state[1][0]
+        rows = [i % self.board_size[0] for i in range(head_pos[0] - RADIUS + self.board_size[0], head_pos[0] + RADIUS + self.board_size[0] + 1)]
+        cols = [i % self.board_size[1] for i in range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
+        window = board[rows, :][:, cols]
+        return to_categorical(window, num_classes=VALUES).reshape((1, NUM_ELEMENTS * VALUES))
+
     def create_model_1(self):
         model = Sequential()
-        model.add(Dense(128, activation='tanh', input_shape=(NUM_ELEMENTS, )))
         model.add(Dense(128, activation='tanh'))
-        model.add(Dense(64, activation='tanh'))
+        model.add(Dense(128, activation='tanh'))
+        # model.add(Dense(64, activation='tanh'))
         model.add(Dense(64, activation='tanh', kernel_regularizer=l2()))
         model.add(Dense(len(self.ACTIONS)))
         model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
@@ -199,6 +224,16 @@ class CustomPolicy(Policy):
     def create_model_3(self):
         model = Sequential()
         model.add(Dense(256, activation='tanh', kernel_regularizer=l2()))
+        model.add(Dense(len(self.ACTIONS)))
+        model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
+        return model
+
+    def create_model_4(self):
+        model = Sequential()
+        model.add(Dense(128, activation='tanh'))
+        model.add(Dense(128, activation='tanh'))
+        model.add(Dense(64, activation='tanh'))
+        model.add(Dense(64, activation='tanh', kernel_regularizer=l2()))
         model.add(Dense(len(self.ACTIONS)))
         model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
         return model
