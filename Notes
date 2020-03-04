@@ -4,6 +4,10 @@ Current Tasks:
 * try and change the batch size to update less frequently (every 200 rounds or something)
 * test deeper and shallower architectures.
 
+Thoughts and Ideas:
+* regularization on every layer and not just last layer
+* PREPROCESSING -- add features for distance from fruit for all fruits, up to radius distance.
+
 TODOs:  (after current)
 
 * if we're score_scope away from the end - stop exploration to maximize results
@@ -12,8 +16,12 @@ TODOs:  (after current)
 
 USEFUL SOURCES:
 https://github.com/keon/deep-q-learning/blob/master/dqn.py
-
 https://github.com/keon/deep-q-learning
 
 
-
+changes made by ziv on wednesday night:
+changed epsilon calculation
+update to train happens every learn (instead of every 50)
+batch threshold is much lower (100)
+bigger deque (500)
+t=0.5
