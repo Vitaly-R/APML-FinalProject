@@ -9,22 +9,17 @@ import numpy as np
 import random as r
 
 
-# todo: add the following to the answers file:
-# The weights of the target model need to be updated because the main model learns from playing the game in relation to the target model,
-# but we also need to update the target model to improve it based on the weights of the main model.
-
-
 VALUES = 11
 LEARNING_RATE = 1e-3
-BATCH_SIZE = 5
+BATCH_SIZE = 15
 MAX_BATCH_SIZE = 10
 MIN_BATCH_SIZE = 1
-BATCH_THRESHOLD = 300
-RADIUS = 2
+BATCH_THRESHOLD = 20 * BATCH_SIZE
+RADIUS = 5
 GAMMA = 0.15
 INITIAL_EPSILON = 1.0
 EPSILON_DECAY = 0.999
-EPSILON_MIN = 0.10
+EPSILON_MIN = 0.01
 WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 NUM_ELEMENTS = WINDOW_SIDE_LENGTH ** 2
 MODEL = 0  # An indicator of weather to use a convolutional model, used solely for testing
@@ -67,9 +62,9 @@ class CustomPolicy(Policy):
             print('creating dense network')
             self.model = self.create_model_4()
             self.target_model = self.create_model_4()
-            self.model.predict(np.zeros((1, NUM_ELEMENTS * VALUES)))
+            self.model.predict(np.zeros((1, NUM_ELEMENTS)))
             self.__process_state = self.__process_state_4
-        self.memory = deque(maxlen=2*BATCH_THRESHOLD)
+        self.memory = deque(maxlen=BATCH_THRESHOLD * 2)
         self.batch_size = BATCH_SIZE
         self.t = 0.125  # a learning rate for the weights of the target model in relation to the main model
         self.epsilon = self.__dict__['epsilon']
@@ -95,21 +90,24 @@ class CustomPolicy(Policy):
         if round > BATCH_THRESHOLD:
             self.epsilon = self.epsilon if self.epsilon <= EPSILON_MIN else self.epsilon * EPSILON_DECAY
 
-            # In order for the model not to start training too early, we wait until enough states are saved.
-            if too_slow:
-                self.batch_size = max(self.batch_size // 2, MIN_BATCH_SIZE)
-            elif not round % 100:  # to prevent from happening too often
-                self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
-            # print("****************** batch size: " + str(self.batch_size))
+            # # In order for the model not to start training too early, we wait until enough states are saved.
+            # if too_slow:
+            #     self.batch_size = max(self.batch_size // 2, MIN_BATCH_SIZE)
+            # elif not round % 100:  # to prevent from happening too often
+            #     self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
+            # # print("****************** batch size: " + str(self.batch_size))
 
             samples = r.sample(self.memory, self.batch_size)
-            for sample in samples:
-                state, action, reward, next_state = sample
+            data = list()
+            targets = list()
+            for (state, action, reward, next_state) in samples:
                 target = self.target_model.predict(state)  # q-values of the target model for each action
                 q_future = max(self.target_model.predict(next_state)[0])  # the max q-value possible from the next state
                 # print("*************** q values: " + str(target))
                 target[0][self.ACTIONS.index(action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
-                self.model.fit(state, target, epochs=1, verbose=0)  # training and updating the weights of the main model for the target activation.
+                targets.append(target[0].tolist())
+                data.append(state[0].tolist())
+            self.model.fit(np.array(data), np.array(targets), epochs=1, verbose=0)  # training and updating the weights of the main model for the target activation.
 
             if not round % 50:
                 # updating the weights of the target model in relation to the main model.
@@ -198,7 +196,8 @@ class CustomPolicy(Policy):
         rows = [i % self.board_size[0] for i in range(head_pos[0] - RADIUS + self.board_size[0], head_pos[0] + RADIUS + self.board_size[0] + 1)]
         cols = [i % self.board_size[1] for i in range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
         window = board[rows, :][:, cols]
-        return to_categorical(window, num_classes=VALUES).reshape((1, NUM_ELEMENTS * VALUES))
+        # return to_categorical(window, num_classes=VALUES).reshape((1, NUM_ELEMENTS * VALUES))
+        return window.reshape((1, NUM_ELEMENTS))
 
     def create_model_1(self):
         model = Sequential()
@@ -230,7 +229,8 @@ class CustomPolicy(Policy):
 
     def create_model_4(self):
         model = Sequential()
-        model.add(Dense(128, activation='tanh'))
+        model.add(Dense(512, activation='tanh'))
+        model.add(Dense(256, activation='tanh'))
         model.add(Dense(128, activation='tanh'))
         model.add(Dense(64, activation='tanh'))
         model.add(Dense(64, activation='tanh', kernel_regularizer=l2()))
