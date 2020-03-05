@@ -8,17 +8,17 @@ import random as r
 
 VALUES = 11
 LEARNING_RATE = 1e-3
-EPSILON = 0.05
-BATCH_SIZE = 60
+EPSILON = 1.0
+BATCH_SIZE = 20
 # MAX_BATCH_SIZE = 10
 # MIN_BATCH_SIZE = 1
-BATCH_THRESHOLD = 100
+BATCH_THRESHOLD = 300
 RADIUS = 2
 WINDOW_SIDE_LENGTH = (2 * RADIUS + 1)
-LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE_LENGTH)]
-NUM_ELEMENTS = VALUES * np.sum(LENGTHS)
-# NUM_FEATURES = (WINDOW_SIDE_LENGTH ** 2) * VALUES  # 11 possible values for each of the elements in the window
-GAMMA = 0.85
+# LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE_LENGTH)]
+# NUM_ELEMENTS = VALUES * np.sum(LENGTHS)
+NUM_ELEMENTS = (WINDOW_SIDE_LENGTH ** 2) * VALUES  # 11 possible values for each of the elements in the window
+GAMMA = 0.1
 
 
 class LinearAgent(Policy):
@@ -48,10 +48,10 @@ class LinearAgent(Policy):
 
         self.batch_size = BATCH_SIZE
         self.weights = np.random.random((3, NUM_ELEMENTS)).astype('float32')
-        self.memory = deque(maxlen=400)
-        # self.epsilon_min = 0.03
+        self.memory = deque(maxlen=1000)
+        self.epsilon_min = 0.10
         self.epsilon_decay = 0.001 ** (1/(self.game_duration - self.score_scope - self.batch_size))
-        self.learning_rate_min = 1e-5
+        # self.learning_rate_min = 1e-5
         self.learning_rate_decay = 0.9999
 
         # self.exploration_decay = self.epsilon / (self.game_duration - self.score_scope - self.batch_size)
@@ -74,10 +74,13 @@ class LinearAgent(Policy):
         """
         if round < self.batch_size:
             return
+        # if round >= 1000:
+        #     self.learning_rate *= self.learning_rate_decay
 
         # update the weights, epsilon and lr
         # self.epsilon = self.epsilon - self.exploration_decay
-        # self.epsilon *= self.epsilon_decay
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
         # if self.learning_rate > self.learning_rate_min:
         #     self.learning_rate *= self.learning_rate_decay
 
@@ -93,12 +96,14 @@ class LinearAgent(Policy):
             q_vals = self.weights.dot(new_s)
             max_idx = np.argmax(q_vals)
             max_q_val = q_vals[max_idx]
-            self.weights[max_idx] = (1 - self.learning_rate) * self.weights[max_idx] + self.learning_rate * (reward + self.gamma * max_q_val) * prev_s
+            # self.weights[max_idx] = (1 - self.learning_rate) * self.weights[max_idx] + self.learning_rate * (reward + self.gamma * max_q_val) * prev_s
+            # self.weights[max_idx] += self.learning_rate * (reward + self.gamma * max_q_val - prev_s) * new_s
+            self.weights[max_idx] = (1-self.learning_rate) * self.weights[max_idx] + self.learning_rate * (reward + self.gamma * max_q_val ) * prev_s
 
-        # normalize weights
-        norm = np.linalg.norm(self.weights)
-        if norm:
-            self.weights /= norm
+        # # normalize weights
+        # norm = np.linalg.norm(self.weights)
+        # if norm:
+        #     self.weights /= norm
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -135,16 +140,17 @@ class LinearAgent(Policy):
 
         # rotate window, no need to rotate North
         if state[1][1] == 'E':
-            window = np.rot90(window, 1)
-        elif state[1][1] == 'W':
             window = np.rot90(window, 3)
+        elif state[1][1] == 'W':
+            window = np.rot90(window, 1)
         elif state[1][1] == 'S':
             window = np.rot90(window, 2)
 
         # process window and return features
-        window = window.tolist()
-        representation = []
-        for i in range(len(window)):
-            representation = representation + window[i][RADIUS - ceil(LENGTHS[i] / 2) + 1: RADIUS + ceil(LENGTHS[i] / 2)]
-        representation = np.array(representation)
-        return to_categorical(representation, num_classes=VALUES).reshape(NUM_ELEMENTS)
+        # window = window.tolist()
+        # representation = []
+        # for i in range(len(window)):
+        #     representation = representation + window[i][RADIUS - ceil(LENGTHS[i] / 2) + 1: RADIUS + ceil(LENGTHS[i] / 2)]
+        # representation = np.array(representation)
+        # return to_categorical(representation, num_classes=VALUES).reshape(NUM_ELEMENTS)
+        return to_categorical(window, num_classes=VALUES).reshape(NUM_ELEMENTS)
