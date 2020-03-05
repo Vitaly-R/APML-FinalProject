@@ -11,22 +11,21 @@ import random as r
 
 VALUES = 11
 LEARNING_RATE = 1e-3
-BATCH_SIZE = 5
-MAX_BATCH_SIZE = 10
-MIN_BATCH_SIZE = 1
+BATCH_SIZE = 20
+MAX_BATCH_SIZE = 30
+MIN_BATCH_SIZE = 10
 # BATCH_THRESHOLD = 20 * BATCH_SIZE
-BATCH_THRESHOLD = 100
-RADIUS = 3
+# BATCH_THRESHOLD = 100
+RADIUS = 4
 WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE_LENGTH)]
 NUM_ELEMENTS = VALUES * np.sum(LENGTHS)
-GAMMA = 0.8
-INITIAL_EPSILON = 0.50
+GAMMA = 0.85
+INITIAL_EPSILON = 0.1
 EPSILON_DECAY = 0.999
 # EPSILON_DECAY_ROUND = BATCH_THRESHOLD
 # EPSILON_MIN = 0.05
-MODEL = 0  # An indicator of weather to use a convolutional model, used solely for testing
-DENSE_SIZE = 64
+DENSE_SIZE = 32
 
 
 class CustomPolicy(Policy):
@@ -39,7 +38,6 @@ class CustomPolicy(Policy):
         policy_args['lr'] = float(policy_args['lr']) if 'lr' in policy_args else LEARNING_RATE
         policy_args['epsilon'] = float(policy_args['epsilon']) if 'epsilon' in policy_args else INITIAL_EPSILON
         policy_args['gamma'] = float(policy_args['gamma']) if 'gamma' in policy_args else GAMMA
-        policy_args['model'] = int(policy_args['model']) if 'model' in policy_args else MODEL
         policy_args['dense_size'] = int(policy_args['dense_size']) if 'dense_size' in policy_args else DENSE_SIZE
         return policy_args
 
@@ -63,7 +61,7 @@ class CustomPolicy(Policy):
 
         self.batch_size = BATCH_SIZE
         self.exploration_decay = self.epsilon / (self.game_duration - self.score_scope - self.batch_size)
-        self.memory = deque(maxlen=BATCH_THRESHOLD * 5)
+        self.memory = deque(maxlen=1000)
         self.t = 0.5  # a learning rate for the weights of the target model in relation to the main model
 
     def learn(self, round, prev_state, prev_action, reward, new_state, too_slow):
@@ -95,7 +93,7 @@ class CustomPolicy(Policy):
 
         data = list()
         targets = list()
-        samples = r.sample(self.memory, self.batch_size)
+        samples = r.choices(self.memory, k=self.batch_size)
         for (prev_features, action, reward, curr_features) in samples:
             target = self.target_model.predict(prev_features)  # q-values of the target model for each action
             q_future = max(self.target_model.predict(curr_features)[0])  # the max q-value possible from the next state
@@ -113,12 +111,6 @@ class CustomPolicy(Policy):
         for i in range(len(target_weights)):
             target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
         self.target_model.set_weights(target_weights)
-
-        # # TODO: testing if the weights get too high
-        # if not round % 500 and round > 0:
-        #     weights = self.model.get_weights()
-        #     for w in weights:
-        #         print(w)
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -145,167 +137,12 @@ class CustomPolicy(Policy):
                 return self.ACTIONS[np.argmax(self.model.predict(curr_features))]
         return r.sample(self.ACTIONS, 1)[0]
 
-    # def __process_state_1(self, state):
-    #     """
-    #     Extracts the part of the board which is within RADIUS around the snake.
-    #     :param state: A tuple (board, head) representing the state.
-    #     :return: A numpy array representing the window.
-    #     """
-    #     board, head_pos = state[0], state[1][0]
-    #     window = np.zeros((WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH))
-    #     for i in range(-RADIUS, RADIUS + 1):
-    #         for j in range(-RADIUS, RADIUS + 1):
-    #             window[i + RADIUS, j + RADIUS] = board[(head_pos[0] + i + self.board_size[0]) % self.board_size[0], (
-    #                         head_pos[1] + j + self.board_size[1]) % self.board_size[1]]
-    #     return window.reshape((1, NUM_ELEMENTS))
-    #
-    # def __process_state_2(self, state):
-    #     """
-    #     Extracts the part of the board which is within RADIUS around the snake.
-    #     :param state: A tuple (board, head) representing the state.
-    #     :return: A numpy array representing the window.
-    #     """
-    #     board, head_pos = state[0], state[1][0]
-    #     window = np.zeros((WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH))
-    #     for i in range(-RADIUS, RADIUS + 1):
-    #         for j in range(-RADIUS, RADIUS + 1):
-    #             window[i + RADIUS, j + RADIUS] = board[(head_pos[0] + i + self.board_size[0]) % self.board_size[0], (
-    #                         head_pos[1] + j + self.board_size[1]) % self.board_size[1]]
-    #     return window.reshape((1, WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH, 1))
-    #
-    # def __process_state_3(self, state):
-    #     """
-    #     Extracts the part of the board which is within RADIUS around the snake.
-    #     :param state: A tuple (board, head) representing the state.
-    #     :return: A numpy array representing the window.
-    #     """
-    #     board, head_pos = state[0], state[1][0]
-    #     window = np.zeros((WINDOW_SIDE_LENGTH, WINDOW_SIDE_LENGTH))
-    #     for i in range(-RADIUS, RADIUS + 1):
-    #         for j in range(-RADIUS, RADIUS + 1):
-    #             window[i + RADIUS, j + RADIUS] = board[(head_pos[0] + i + self.board_size[0]) % self.board_size[0], (
-    #                         head_pos[1] + j + self.board_size[1]) % self.board_size[1]]
-    #     return to_categorical(window, num_classes=VALUES).reshape((1, NUM_ELEMENTS * VALUES))
-
-    def __process_state(self, current_state_window, prev_state_window):
-        '''
-        should be called process window
-        :param current_state_window:
-        :param prev_state_window:
-        :return:
-        '''
-        representation = []
-        # board, head_pos = state[0], state[1][0]
-        # rows = [i % self.board_size[0] for i in
-        #         range(head_pos[0] - RADIUS + self.board_size[0], head_pos[0] + RADIUS + self.board_size[0] + 1)]
-        # cols = [i % self.board_size[1] for i in
-        #         range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
-        # window = self.rotate_window(prev_state, state, board[rows][:, cols]).tolist()
-        window = self.rotate_window(current_state_window, prev_state_window).tolist()
-        for i in range(len(window)):
-            representation = representation + window[i][RADIUS - ceil(LENGTHS[i] / 2) + 1: RADIUS + ceil(LENGTHS[i] / 2)]
-        representation = np.array(representation)
-        return to_categorical(representation, num_classes=VALUES).reshape((1, NUM_ELEMENTS))
-
-    # def __process_state_5(self, state):
-    #     board, head_pos = state[0], state[1][0]
-    #     rows = [i % self.board_size[0] for i in
-    #             range(head_pos[0] - RADIUS + self.board_size[0], head_pos[0] + RADIUS + self.board_size[0] + 1)]
-    #     cols = [i % self.board_size[1] for i in
-    #             range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
-    #     window = board[rows, :][:, cols]
-    #     # return window[np.newaxis, ..., np.newaxis]
-    #     return to_categorical(window, num_classes=VALUES).reshape((1, NUM_ELEMENTS * VALUES))
-    #     # return window.reshape((1, NUM_ELEMENTS))
-
-    # def create_model_1(self):
-    #     model = Sequential()
-    #     model.add(Dense(128, activation='tanh'))
-    #     model.add(Dense(128, activation='tanh'))
-    #     # model.add(Dense(64, activation='tanh'))
-    #     model.add(Dense(64, activation='tanh', kernel_regularizer=l2()))
-    #     model.add(Dense(len(self.ACTIONS)))
-    #     model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
-    #     return model
-    #
-    # def create_model_2(self):
-    #     model = Sequential()
-    #     model.add(Conv2D(filters=32, kernel_size=5, activation='tanh'))
-    #     model.add(Conv2D(filters=64, kernel_size=3, activation='tanh'))
-    #     model.add(Flatten())
-    #     model.add(Dense(256, activation='tanh'))
-    #     model.add(Dense(128, activation='tanh'))
-    #     model.add(Dense(len(self.ACTIONS)))
-    #     model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
-    #     return model
-    #
-    # def create_model_3(self):
-    #     model = Sequential()
-    #     model.add(Dense(128, activation='tanh', kernel_regularizer=l2()))
-    #     model.add(Dense(len(self.ACTIONS), kernel_regularizer=l2()))
-    #     model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
-    #     return model
-    #
-    # def create_model_4(self):
-    #     model = Sequential()
-    #     # model.add(Conv2D(32, 5, activation='relu'))
-    #     # model.add(Flatten())
-    #     model.add(Dense(512, activation='relu'))
-    #     model.add(Dense(512, activation='relu'))
-    #     model.add(Dense(512, activation='relu'))
-    #     model.add(Dense(512, activation='relu'))
-    #     model.add(Dense(512, activation='relu'))
-    #     model.add(Dense(len(self.ACTIONS)))
-    #     model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
-    #     return model
-
     def create_model(self, dense_size=128):
         model = Sequential()
         model.add(Dense(dense_size, activation='tanh', kernel_regularizer=l2()))
         model.add(Dense(len(self.ACTIONS), kernel_regularizer=l2()))
         model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
         return model
-
-    def rotate_window(self, current_state_window, prev_state_window):
-        '''
-        returns only the window, without the head
-        :param current_state_window:
-        :param prev_state_window:
-        :return:
-        '''
-        prev_head = prev_state_window[1]
-        prev_head_pos = prev_head[0]
-        curr_head = current_state_window[1]
-        curr_head_pos = curr_head[0]
-        if prev_head_pos[0] == curr_head_pos[0]:
-            # moving horizontally
-            if ((prev_head_pos[1] + 1) % self.board_size[1]) == curr_head_pos[1]:
-                # moving to the east
-                return np.rot90(current_state_window[0], 1)
-            else:
-                # moving to the west
-                return np.rot90(current_state_window[0], 3)
-        else:
-            # moving vertically
-            if ((prev_head_pos[0] - 1) % self.board_size[0]) == curr_head_pos[0]:
-                # moving to the north
-                return current_state_window[0]
-            else:
-                # moving to the south
-                return np.rot90(current_state_window[0], 2)
-
-    def get_window(self, state):
-        '''
-        returns the head too
-        :param state:
-        :return:
-        '''
-        board, head_pos = state[0], state[1][0]
-        rows = [i % self.board_size[0] for i in
-                range(head_pos[0] - RADIUS + self.board_size[0], head_pos[0] + RADIUS + self.board_size[0] + 1)]
-        cols = [i % self.board_size[1] for i in
-                range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
-        return board[rows][:, cols], state[1]
 
     def get_features(self, state):
         # get window
