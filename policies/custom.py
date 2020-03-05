@@ -21,8 +21,8 @@ WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
 LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE_LENGTH)]
 NUM_ELEMENTS = VALUES * np.sum(LENGTHS)
 GAMMA = 0.8
-INITIAL_EPSILON = 0.1
-EPSILON_DECAY = 0.9999
+INITIAL_EPSILON = 0.50
+EPSILON_DECAY = 0.999
 # EPSILON_DECAY_ROUND = BATCH_THRESHOLD
 # EPSILON_MIN = 0.05
 MODEL = 0  # An indicator of weather to use a convolutional model, used solely for testing
@@ -61,9 +61,9 @@ class CustomPolicy(Policy):
         self.target_model = self.create_model(self.dense_size)
         self.model.predict(np.zeros((1, NUM_ELEMENTS)))
 
-        self.exploration_decay = self.epsilon / (self.game_duration - self.score_scope)
-        self.memory = deque(maxlen=BATCH_THRESHOLD * 5)
         self.batch_size = BATCH_SIZE
+        self.exploration_decay = self.epsilon / (self.game_duration - self.score_scope - self.batch_size)
+        self.memory = deque(maxlen=BATCH_THRESHOLD * 5)
         self.t = 0.5  # a learning rate for the weights of the target model in relation to the main model
 
     def learn(self, round, prev_state, prev_action, reward, new_state, too_slow):
@@ -93,76 +93,26 @@ class CustomPolicy(Policy):
         # self.epsilon = self.epsilon - self.exploration_decay
         self.epsilon *= EPSILON_DECAY
 
-        # samples = r.sample(self.memory, self.batch_size)
         data = list()
         targets = list()
-        sample_indices = np.random.randint(1, len(self.memory), self.batch_size)
-        for i in sample_indices:
-            prev_prev_state_window, prev_action, prev_reward, prev_state_window = self.memory[i - 1]
-            processed_prev = self.__process_state(prev_state_window, prev_prev_state_window)
-            prev_state_window, action, reward, next_state_window = self.memory[i - 1]
-            processed_curr = self.__process_state(next_state_window, prev_state_window)
-
-            target = self.target_model.predict(processed_prev)  # q-values of the target model for each action
-            q_future = max(self.target_model.predict(processed_curr)[0])  # the max q-value possible from the next state
+        samples = r.sample(self.memory, self.batch_size)
+        for (prev_features, action, reward, curr_features) in samples:
+            target = self.target_model.predict(prev_features)  # q-values of the target model for each action
+            q_future = max(self.target_model.predict(curr_features)[0])  # the max q-value possible from the next state
             # print("*************** q values: " + str(target))
-            target[0][self.ACTIONS.index(action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
+            target[0][self.ACTIONS.index(
+                action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
             targets.append(target[0].tolist())
-            data.append(processed_prev[0].tolist())
-        # data = list()
-        # targets = list()
-        # for (next_state, action, reward) in samples:
-        #     target = self.target_model.predict(state)  # q-values of the target model for each action
-        #     q_future = max(self.target_model.predict(next_state)[0])  # the max q-value possible from the next state
-        #     # print("*************** q values: " + str(target))
-        #     target[0][self.ACTIONS.index(
-        #         action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
-        #     targets.append(target[0].tolist())
-        #     data.append(state[0].tolist())
+            data.append(prev_features[0].tolist())
         self.model.fit(np.array(data), np.array(targets), epochs=1,
                        verbose=0)  # training and updating the weights of the main model for the target activation.
 
-        # if not round % 50:
         # updating the weights of the target model in relation to the main model.
         weights = self.model.get_weights()
         target_weights = self.target_model.get_weights()
         for i in range(len(target_weights)):
             target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
         self.target_model.set_weights(target_weights)
-
-        # # if round >= EPSILON_DECAY_ROUND:
-        # #     # self.epsilon = EPSILON_MIN if self.epsilon <= EPSILON_MIN else self.epsilon - self.exploration_decay
-        # #
-        #
-        # if round > BATCH_THRESHOLD:
-        #     # # In order for the model not to start training too early, we wait until enough states are saved.
-        #     # if too_slow:
-        #     #     self.batch_size = max(self.batch_size // 2, MIN_BATCH_SIZE)
-        #     # elif not round % 100:  # to prevent from happening too often
-        #     #     self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
-        #     # # print("****************** batch size: " + str(self.batch_size))
-        #
-        #     samples = r.sample(self.memory, self.batch_size)
-        #     data = list()
-        #     targets = list()
-        #     for (state, action, reward, next_state) in samples:
-        #         target = self.target_model.predict(state)  # q-values of the target model for each action
-        #         q_future = max(self.target_model.predict(next_state)[0])  # the max q-value possible from the next state
-        #         # print("*************** q values: " + str(target))
-        #         target[0][self.ACTIONS.index(
-        #             action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
-        #         targets.append(target[0].tolist())
-        #         data.append(state[0].tolist())
-        #     self.model.fit(np.array(data), np.array(targets), epochs=1,
-        #                    verbose=0)  # training and updating the weights of the main model for the target activation.
-        #
-        #     # if not round % 50:
-        #     # updating the weights of the target model in relation to the main model.
-        #     weights = self.model.get_weights()
-        #     target_weights = self.target_model.get_weights()
-        #     for i in range(len(target_weights)):
-        #         target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
-        #     self.target_model.set_weights(target_weights)
 
         # # TODO: testing if the weights get too high
         # if not round % 500 and round > 0:
@@ -188,12 +138,11 @@ class CustomPolicy(Policy):
         """
 
         if prev_state is not None:
-            new_state_window = self.get_window(new_state)
-            prev_state_window = self.get_window(prev_state)
-            self.memory.append([prev_state_window, prev_action, reward, new_state_window])
+            prev_features = self.get_features(prev_state)
+            curr_features = self.get_features(new_state)
+            self.memory.append([prev_features, prev_action, reward, curr_features])
             if np.random.random() < self.epsilon:
-                processed_state = self.__process_state(new_state_window, prev_state_window)
-                return self.ACTIONS[np.argmax(self.model.predict(processed_state))]
+                return self.ACTIONS[np.argmax(self.model.predict(curr_features))]
         return r.sample(self.ACTIONS, 1)[0]
 
     # def __process_state_1(self, state):
@@ -357,4 +306,30 @@ class CustomPolicy(Policy):
         cols = [i % self.board_size[1] for i in
                 range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
         return board[rows][:, cols], state[1]
+
+    def get_features(self, state):
+        # get window
+        board, head_pos = state[0], state[1][0]
+        rows = [i % self.board_size[0] for i in
+                range(head_pos[0] - RADIUS + self.board_size[0], head_pos[0] + RADIUS + self.board_size[0] + 1)]
+        cols = [i % self.board_size[1] for i in
+                range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
+        window = board[rows][:, cols]
+
+        # rotate window, no need to rotate North
+        if state[1][1] == 'E':
+            window = np.rot90(window, 1)
+        elif state[1][1] == 'W':
+            window = np.rot90(window, 3)
+        elif state[1][1] == 'S':
+            window = np.rot90(window, 2)
+
+        # process window and return features
+        window = window.tolist()
+        representation = []
+        for i in range(len(window)):
+            representation = representation + window[i][RADIUS - ceil(LENGTHS[i] / 2) + 1: RADIUS + ceil(LENGTHS[i] / 2)]
+        representation = np.array(representation)
+        return to_categorical(representation, num_classes=VALUES).reshape((1, NUM_ELEMENTS))
+
 
