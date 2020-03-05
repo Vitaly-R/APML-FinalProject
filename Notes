@@ -25,3 +25,16 @@ update to train happens every learn (instead of every 50)
 batch threshold is much lower (100)
 bigger deque (500)
 t=0.5
+
+
+RESULTS:
+At Round 40800 the scores are:
+Player 1: -0.0590
+Player 2: 0.1526
+Player 3: 0.0888
+Player 4: -0.0016
+Player 5: -0.0374
+0::0:14:34	3	VALUE	Rewards in last 100 rounds: 3
+0::0:14:34	1	VALUE	Rewards in last 100 rounds: 9
+0::0:14:34	2	VALUE	Rewards in last 100 rounds: 5
+0::0:14:34	4	VALUE	Rewards in last 100 rounds: 0
