@@ -116,7 +116,7 @@ class LinearAgent(Policy):
         curr_head_pos = curr_head[0]
         if prev_head_pos[0] == curr_head_pos[0]:
             # moving horizontally
-            if prev_head_pos[1] < curr_head_pos[1]:
+            if ((prev_head_pos[1] + 1) % self.board_size[1]) == curr_head_pos[1]:
                 # moving to the east
                 return 'E'
             else:
@@ -124,7 +124,7 @@ class LinearAgent(Policy):
                 return 'W'
         else:
             # moving vertically
-            if prev_head_pos[0] < curr_head_pos[0]:
+            if ((prev_head_pos[0] - 1) % self.board_size[0]) == curr_head_pos[0]:
                 # moving to the north
                 return 'N'
             else:
