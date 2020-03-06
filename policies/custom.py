@@ -1,44 +1,39 @@
 from policies.base_policy import Policy
-from keras import Sequential
-from keras.layers import Dense, Conv2D, Flatten
-from keras.optimizers import Adam
-from keras.regularizers import l2
-from keras.utils import to_categorical
 from collections import deque
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.optimizers import Adam
+from keras.utils import to_categorical
 from math import ceil
 import numpy as np
-import random as r
+import random
 
-VALUES = 11
+MEMORY_SIZE = 1000
+EPSILON_0 = 15e-2
+DECAY_RATE = 0.995
+GAMMA = 85e-2
 LEARNING_RATE = 1e-3
 BATCH_SIZE = 20
-MAX_BATCH_SIZE = 30
-MIN_BATCH_SIZE = 10
-# BATCH_THRESHOLD = 20 * BATCH_SIZE
-# BATCH_THRESHOLD = 100
-RADIUS = 4
-WINDOW_SIDE_LENGTH = 2 * RADIUS + 1
-LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE_LENGTH)]
-NUM_ELEMENTS = VALUES * np.sum(LENGTHS)
-GAMMA = 0.85
-INITIAL_EPSILON = 0.1
-EPSILON_DECAY = 0.999
-# EPSILON_DECAY_ROUND = BATCH_THRESHOLD
-# EPSILON_MIN = 0.05
-DENSE_SIZE = 32
+VALUES = 11
+RADIUS = 5
+WINDOW_SIDE = 2 * RADIUS + 1
+LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE)]
+ELEMENTS = np.sum(LENGTHS)
+FEATURES = VALUES * ELEMENTS
 
 
-class CustomPolicy(Policy):
+class Custom(Policy):
+
     def cast_string_args(self, policy_args):
         """
         this function casts arguments passed during policy construction to their proper types/names.
         :param policy_args: an arg -> string value map as received in command line.
         :return: A map of string -> value after casting to useful objects, these will be added as members to the policy
         """
-        policy_args['lr'] = float(policy_args['lr']) if 'lr' in policy_args else LEARNING_RATE
-        policy_args['epsilon'] = float(policy_args['epsilon']) if 'epsilon' in policy_args else INITIAL_EPSILON
+        policy_args['epsilon'] = float(policy_args['epsilon']) if 'epsilon' in policy_args else EPSILON_0
         policy_args['gamma'] = float(policy_args['gamma']) if 'gamma' in policy_args else GAMMA
-        policy_args['dense_size'] = int(policy_args['dense_size']) if 'dense_size' in policy_args else DENSE_SIZE
+        policy_args['lr'] = float(policy_args['lr']) if 'lr' in policy_args else LEARNING_RATE
+        policy_args['bs'] = int(policy_args['bs']) if 'bs' in policy_args else BATCH_SIZE
         return policy_args
 
     def init_run(self):
@@ -49,20 +44,15 @@ class CustomPolicy(Policy):
         to load your pickled model and set the variables accordingly, if the
         game uses a saved model and is not a training session.
         """
+        self.memory = deque(maxlen=MEMORY_SIZE)
         self.epsilon = self.__dict__['epsilon']
-        self.lr = self.__dict__['lr']
         self.gamma = self.__dict__['gamma']
-        self.dense_size = self.__dict__['dense_size']
-
-        print('creating simple network')
-        self.model = self.create_model(self.dense_size)
-        self.target_model = self.create_model(self.dense_size)
-        self.model.predict(np.zeros((1, NUM_ELEMENTS)))
-
-        self.batch_size = BATCH_SIZE
-        self.exploration_decay = self.epsilon / (self.game_duration - self.score_scope - self.batch_size)
-        self.memory = deque(maxlen=1000)
-        self.t = 0.5  # a learning rate for the weights of the target model in relation to the main model
+        self.lr = self.__dict__['lr']
+        self.bs = self.__dict__['bs']
+        self.model = self.get_model()
+        init_in = np.zeros((1, FEATURES))
+        init_prediction = self.model.predict(init_in)
+        self.model.fit(init_in, init_prediction)
 
     def learn(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -80,37 +70,22 @@ class CustomPolicy(Policy):
                         policy for a few rounds in a row. you may use this to make your
                         computation time smaller (by lowering the batch size for example).
         """
-        if round < self.batch_size:
-            return
-
-        if too_slow:
-            self.batch_size = max(self.batch_size // 2, MIN_BATCH_SIZE)
-        elif not round % 50:
-            self.batch_size = min(self.batch_size + 1, MAX_BATCH_SIZE)
-
-        # self.epsilon = self.epsilon - self.exploration_decay
-        self.epsilon *= EPSILON_DECAY
-
-        data = list()
-        targets = list()
-        samples = r.choices(self.memory, k=self.batch_size)
-        for (prev_features, action, reward, curr_features) in samples:
-            target = self.target_model.predict(prev_features)  # q-values of the target model for each action
-            q_future = max(self.target_model.predict(curr_features)[0])  # the max q-value possible from the next state
-            # print("*************** q values: " + str(target))
-            target[0][self.ACTIONS.index(
-                action)] = reward + self.gamma * q_future  # the target q-value we want our model to achieve for the specific action
-            targets.append(target[0].tolist())
-            data.append(prev_features[0].tolist())
-        self.model.fit(np.array(data), np.array(targets), epochs=1,
-                       verbose=0)  # training and updating the weights of the main model for the target activation.
-
-        # updating the weights of the target model in relation to the main model.
-        weights = self.model.get_weights()
-        target_weights = self.target_model.get_weights()
-        for i in range(len(target_weights)):
-            target_weights[i] = weights[i] * self.t + target_weights[i] * (1 - self.t)
-        self.target_model.set_weights(target_weights)
+        self.epsilon *= DECAY_RATE
+        if len(self.memory) > 0:
+            samples = random.choices(self.memory, k=self.bs)
+            p_features_batch = np.zeros((self.bs, FEATURES))
+            actions = np.zeros(self.bs, dtype=int)
+            p_rewards = np.zeros(self.bs)
+            n_features_batch = np.zeros((self.bs, FEATURES))
+            for i, (p_features, p_action, r, n_features) in enumerate(samples):
+                p_features_batch[i] = p_features
+                actions[i] = self.ACTIONS.index(p_action)
+                p_rewards[i] = r
+                n_features_batch[i] = n_features
+            discounted_max_future_qs = self.gamma * np.max(self.model.predict(n_features_batch), axis=1)
+            prev_states_predictions = self.model.predict(p_features_batch)
+            prev_states_predictions[:, actions] = p_rewards + discounted_max_future_qs
+            self.model.fit(p_features_batch, prev_states_predictions, epochs=1, verbose=0)
 
     def act(self, round, prev_state, prev_action, reward, new_state, too_slow):
         """
@@ -128,45 +103,41 @@ class CustomPolicy(Policy):
                         computation time smaller (by lowering the batch size for example)...
         :return: an action (from Policy.Actions) in response to the new_state.
         """
-
+        if (self.game_duration - self.score_scope) < round:
+            self.epsilon = 0
+        new_features = self.process_state(new_state)
         if prev_state is not None:
-            prev_features = self.get_features(prev_state)
-            curr_features = self.get_features(new_state)
-            self.memory.append([prev_features, prev_action, reward, curr_features])
-            if np.random.random() < self.epsilon:
-                return self.ACTIONS[np.argmax(self.model.predict(curr_features))]
-        return r.sample(self.ACTIONS, 1)[0]
+            prev_features = self.process_state(prev_state)
+            self.memory.append((prev_features.tolist(), prev_action, reward, new_features.tolist()))
+        if np.random.random() < self.epsilon:
+            return np.random.choice(self.ACTIONS)
+        return self.ACTIONS[np.argmax(self.model.predict(new_features[np.newaxis, ...]))]
 
-    def create_model(self, dense_size=128):
+    def get_model(self):
         model = Sequential()
-        model.add(Dense(dense_size, activation='tanh', kernel_regularizer=l2()))
-        model.add(Dense(len(self.ACTIONS), kernel_regularizer=l2()))
-        model.compile(optimizer=Adam(lr=self.lr), loss='mean_squared_error')
+        model.add(Dense(32, activation='relu'))
+        model.add(Dense(8, activation='relu'))
+        model.add(Dense(len(self.ACTIONS), activation='softmax'))
+        model.compile(Adam(lr=self.lr), 'mean_squared_error')
         return model
 
-    def get_features(self, state):
-        # get window
-        board, head_pos = state[0], state[1][0]
-        rows = [i % self.board_size[0] for i in
-                range(head_pos[0] - RADIUS + self.board_size[0], head_pos[0] + RADIUS + self.board_size[0] + 1)]
-        cols = [i % self.board_size[1] for i in
-                range(head_pos[1] - RADIUS + self.board_size[1], head_pos[1] + RADIUS + self.board_size[1] + 1)]
+    def process_state(self, state):
+        (board, (pos, direction)) = state
+        rows = [i % self.board_size[0] for i in range(pos[0] - RADIUS, pos[0] + RADIUS + 1)]
+        cols = [i % self.board_size[1] for i in range(pos[1] - RADIUS, pos[1] + RADIUS + 1)]
         window = board[rows][:, cols]
-
-        # rotate window, no need to rotate North
-        if state[1][1] == 'E':
+        if direction == 'E':
             window = np.rot90(window, 1)
-        elif state[1][1] == 'W':
-            window = np.rot90(window, 3)
-        elif state[1][1] == 'S':
+        elif direction == 'S':
             window = np.rot90(window, 2)
+        elif direction == 'W':
+            window = np.rot90(window, 3)
 
-        # process window and return features
         window = window.tolist()
-        representation = []
+        flattened = []
         for i in range(len(window)):
-            representation = representation + window[i][RADIUS - ceil(LENGTHS[i] / 2) + 1: RADIUS + ceil(LENGTHS[i] / 2)]
-        representation = np.array(representation)
-        return to_categorical(representation, num_classes=VALUES).reshape((1, NUM_ELEMENTS))
+            flattened = flattened + window[i][RADIUS - ceil(LENGTHS[i] / 2) + 1: RADIUS + ceil(LENGTHS[i] / 2)]
+        for i in range(len(flattened)):
+            flattened[i] += 1  # in order to offset the range from [-1, 9] to [1, 10]
 
-
+        return to_categorical(flattened, num_classes=11).reshape(FEATURES)
