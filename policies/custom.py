@@ -3,22 +3,24 @@ from collections import deque
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import Adam
+from keras.regularizers import l2
 from keras.utils import to_categorical
 from math import ceil
 import numpy as np
 import random
 
-MEMORY_SIZE = 1000
-EPSILON_0 = 15e-2
-DECAY_RATE = 0.995
+MEMORY_SIZE = 500
+EPSILON_0 = 0.1
+DECAY_RATE = 0.9999
 GAMMA = 85e-2
-LEARNING_RATE = 1e-3
-BATCH_SIZE = 20
+LEARNING_RATE = 1e-4
+BATCH_SIZE = 15
 VALUES = 11
-RADIUS = 5
+RADIUS = 2
 WINDOW_SIDE = 2 * RADIUS + 1
 LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE)]
 ELEMENTS = np.sum(LENGTHS)
+# ELEMENTS = WINDOW_SIDE ** 2
 FEATURES = VALUES * ELEMENTS
 
 
@@ -44,11 +46,12 @@ class Custom(Policy):
         to load your pickled model and set the variables accordingly, if the
         game uses a saved model and is not a training session.
         """
-        self.memory = deque(maxlen=MEMORY_SIZE)
         self.epsilon = self.__dict__['epsilon']
         self.gamma = self.__dict__['gamma']
         self.lr = self.__dict__['lr']
         self.bs = self.__dict__['bs']
+
+        self.memory = deque(maxlen=MEMORY_SIZE)
         self.model = self.get_model()
         init_in = np.zeros((1, FEATURES))
         init_prediction = self.model.predict(init_in)
@@ -109,19 +112,29 @@ class Custom(Policy):
         if prev_state is not None:
             prev_features = self.process_state(prev_state)
             self.memory.append((prev_features.tolist(), prev_action, reward, new_features.tolist()))
-        if np.random.random() < self.epsilon:
+            # self.memory.append((prev_features, prev_action, reward, new_features))
+        if np.random.uniform() < self.epsilon:
             return np.random.choice(self.ACTIONS)
         return self.ACTIONS[np.argmax(self.model.predict(new_features[np.newaxis, ...]))]
 
     def get_model(self):
+        '''
+        return the model of the custom agent
+        '''
         model = Sequential()
+        # model.add(Dense(10, activation='softmax'))
         model.add(Dense(32, activation='relu'))
+        model.add(Dense(16, activation='relu'))
         model.add(Dense(8, activation='relu'))
-        model.add(Dense(len(self.ACTIONS), activation='softmax'))
+        model.add(Dense(len(self.ACTIONS), activation='linear'))
         model.compile(Adam(lr=self.lr), 'mean_squared_error')
         return model
 
     def process_state(self, state):
+        '''
+        process the state by getting a smaller window, rotating it, and converting it to a rhombus represented as a
+        feature vector
+        '''
         (board, (pos, direction)) = state
         rows = [i % self.board_size[0] for i in range(pos[0] - RADIUS, pos[0] + RADIUS + 1)]
         cols = [i % self.board_size[1] for i in range(pos[1] - RADIUS, pos[1] + RADIUS + 1)]
@@ -138,6 +151,12 @@ class Custom(Policy):
         for i in range(len(window)):
             flattened = flattened + window[i][RADIUS - ceil(LENGTHS[i] / 2) + 1: RADIUS + ceil(LENGTHS[i] / 2)]
         for i in range(len(flattened)):
-            flattened[i] += 1  # in order to offset the range from [-1, 9] to [1, 10]
+            flattened[i] += 1  # in order to offset the range from [-1, 9] to [0, 10]
 
-        return to_categorical(flattened, num_classes=11).reshape(FEATURES)
+        return to_categorical(flattened, num_classes=VALUES).reshape(FEATURES)
+
+        # features = np.zeros(FEATURES)
+        # flattened = np.reshape(window, ELEMENTS)
+        # for i in range(flattened.shape[0]):
+        #     features[i * VALUES + flattened[i] + 1] = 1  # the + 1 in the index is to offset the values from [-1, 9] to [0, 10]
+        # return features
