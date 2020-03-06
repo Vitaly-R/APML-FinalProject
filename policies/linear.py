@@ -95,9 +95,9 @@ class Linear(Policy):
         return self.ACTIONS[np.argmax(np.dot(self.weights, new_features))]
 
     def process_state(self, state):
-        '''
+        """
         convert the state into a rotated window with edge length of 2*RADIUS + 1
-        '''
+        """
         (board, (pos, direction)) = state
         rows = [i % self.board_size[0] for i in range(pos[0] - RADIUS, pos[0] + RADIUS + 1)]
         cols = [i % self.board_size[1] for i in range(pos[1] - RADIUS, pos[1] + RADIUS + 1)]
@@ -113,9 +113,9 @@ class Linear(Policy):
 
     @staticmethod
     def to_features(window):
-        '''
+        """
         convert the window to a feature vector of shape ELEMENTS, by using 1-hot encoding
-        '''
+        """
         features = np.zeros(FEATURES)
         flattened = np.reshape(window, ELEMENTS)
         for i in range(flattened.shape[0]):

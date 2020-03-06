@@ -3,7 +3,6 @@ from collections import deque
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import Adam
-from keras.regularizers import l2
 from keras.utils import to_categorical
 from math import ceil
 import numpy as np
@@ -11,16 +10,15 @@ import random
 
 MEMORY_SIZE = 500
 EPSILON_0 = 0.1
-DECAY_RATE = 0.9999
+DECAY_RATE = 0.99
 GAMMA = 85e-2
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-3
 BATCH_SIZE = 15
 VALUES = 11
 RADIUS = 2
 WINDOW_SIDE = 2 * RADIUS + 1
 LENGTHS = [(1 + 2 * RADIUS) - abs(2 * (i - RADIUS)) for i in range(WINDOW_SIDE)]
 ELEMENTS = np.sum(LENGTHS)
-# ELEMENTS = WINDOW_SIDE ** 2
 FEATURES = VALUES * ELEMENTS
 
 
@@ -73,7 +71,7 @@ class Custom(Policy):
                         policy for a few rounds in a row. you may use this to make your
                         computation time smaller (by lowering the batch size for example).
         """
-        self.epsilon *= DECAY_RATE
+        self.epsilon = self.epsilon * DECAY_RATE if not round % 500 else self.epsilon
         if len(self.memory) > 0:
             samples = random.choices(self.memory, k=self.bs)
             p_features_batch = np.zeros((self.bs, FEATURES))
@@ -118,23 +116,20 @@ class Custom(Policy):
         return self.ACTIONS[np.argmax(self.model.predict(new_features[np.newaxis, ...]))]
 
     def get_model(self):
-        '''
+        """
         return the model of the custom agent
-        '''
+        """
         model = Sequential()
-        # model.add(Dense(10, activation='softmax'))
-        model.add(Dense(32, activation='relu'))
         model.add(Dense(16, activation='relu'))
-        model.add(Dense(8, activation='relu'))
         model.add(Dense(len(self.ACTIONS), activation='linear'))
         model.compile(Adam(lr=self.lr), 'mean_squared_error')
         return model
 
     def process_state(self, state):
-        '''
+        """
         process the state by getting a smaller window, rotating it, and converting it to a rhombus represented as a
         feature vector
-        '''
+        """
         (board, (pos, direction)) = state
         rows = [i % self.board_size[0] for i in range(pos[0] - RADIUS, pos[0] + RADIUS + 1)]
         cols = [i % self.board_size[1] for i in range(pos[1] - RADIUS, pos[1] + RADIUS + 1)]
@@ -154,9 +149,3 @@ class Custom(Policy):
             flattened[i] += 1  # in order to offset the range from [-1, 9] to [0, 10]
 
         return to_categorical(flattened, num_classes=VALUES).reshape(FEATURES)
-
-        # features = np.zeros(FEATURES)
-        # flattened = np.reshape(window, ELEMENTS)
-        # for i in range(flattened.shape[0]):
-        #     features[i * VALUES + flattened[i] + 1] = 1  # the + 1 in the index is to offset the values from [-1, 9] to [0, 10]
-        # return features

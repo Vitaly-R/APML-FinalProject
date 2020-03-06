@@ -92,15 +92,15 @@ APML Project - Snake
 \bar under
 Vitaly Rajev
 \bar default
- - | 
+ - 320929227 | 
 \bar under
 Ziv Mahluf
 \bar default
- -
+ - 316417385
 \end_layout
 
 \begin_layout Section*
-Part 1 - Linear Agent
+Part 1 - General
 \end_layout
 
 \begin_layout Subsection*
@@ -109,31 +109,99 @@ Part 1 - Linear Agent
 \end_layout
 
 \begin_layout Standard
-We chose to represent the board by using a feature vector on a diamond-shaped
- window of a given radius around the position of the snake's head on the
- board, meaning all positions around the head within 'radius' number of
- non-diagonal moves.
+We chose to represent the board using a feature vector of the area around
+ the snake's head position within a certain radius 
+\begin_inset Formula $r$
+\end_inset
+
+, such that each position in the area can be reached in up to 
+\begin_inset Formula $r$
+\end_inset
+
+ steps.
+ 
 \end_layout
 
 \begin_layout Standard
-In addition, we rotated the window around the head of the snake so the direction
- of movement whithin the window is always up.
+The area is in the shape of a diamond around the head, rotated such that
+ the snake is always going up, and for each position in the area, there
+ are 11 positions in the feature vector, indicating weather the correspondng
+ particular value is at the corresponding position in the window.
+ 
 \end_layout
 
 \begin_layout Standard
-We chose this form of representation since it allowed the agent, to learn
- weights for each value of each position, allowing it to approximate the
- q-values better, since it takes into account more possible states.
+We chose to use a feature vector since the values represent different discrete
+ items on the board, and each value in each position should be considered
+ differently, and not by the position alone.
+\end_layout
+
+\begin_layout Standard
+The representation is extracted with a feature function of the state, which
+ is used in both policies and will be denoted as 
+\begin_inset Formula $\phi(\cdot)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+This representation was used for both the linear and the custom policy.
 \end_layout
 
 \begin_layout Subsection*
 2.
- The Linear Policy:
+ Replay:
 \end_layout
 
 \begin_layout Standard
-The linear agent itself approximates 3 q-values at once for each state -
- corresponding to 
+In both policies, we keep a memory buffer from which we sample batches of
+ examples to learn from.
+ The buffer is represented by a queue with a fixed length, meaning in each
+ learning step, the policies learn from multiple examples at once.
+\end_layout
+
+\begin_layout Standard
+Each example in the buffer is a tuple 
+\begin_inset Formula $(prev\_state,prev\_action,reward,new\_state)$
+\end_inset
+
+, in which the states are feature vectors.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Newpage pagebreak
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section*
+Part 2 - Linear Policy
+\end_layout
+
+\begin_layout Subsection*
+1.
+ Policy Details:
+\end_layout
+
+\begin_layout Standard
+The linear policy is represented by a weights matrix of 3 by the number
+ of features (which is determined by the radius), which we'll denote as
+ 
+\begin_inset Formula $w$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+The agent using this policy calculates, given a state 
+\begin_inset Formula $s$
+\end_inset
+
+, 
 \begin_inset Formula $Q(s,a)$
 \end_inset
 
@@ -141,23 +209,34 @@ The linear agent itself approximates 3 q-values at once for each state -
 \begin_inset Formula $a\in ActionSpace$
 \end_inset
 
- on a given state.
+ according to 
+\begin_inset Formula $w\cdot\phi(s)$
+\end_inset
+
+.
 \end_layout
 
 \begin_layout Standard
-The agent approximates the values using a linear feature function of the
- state (as described in the board representation), and a matrix with 3 rows,
- each with a length depending on the radius chosen.
-\end_layout
+We chose to calculate the q values, which represent the expected reward
+ achievable from 
+\begin_inset Formula $s$
+\end_inset
 
-\begin_layout Standard
-We chose this way in order to avoid having to calculate following states
- given a state and an action, and calculating the q-values multiple times
- per action or learning function.
+ by doing the action 
+\begin_inset Formula $a$
+\end_inset
+
+, for all actions at once, since if we decide to use the action as an input,
+ we'd have to perform additional calculations for future states, as well
+ as calculate the q-values multiple times each time, and these calculations
+ might be wrong, or inefficient, and did worse when attempting to implement
+ the policy to predict the q-value for a state and an action as an input,
+ so we decided to let the agent learn these considerations implicitly in
+ the matrix.
 \end_layout
 
 \begin_layout Subsection*
-3.
+2.
  Learning Algorithm:
 \end_layout
 
@@ -178,10 +257,14 @@ The weights vector
 \end_inset
 
  in the row 
-\begin_inset Formula $j=argmax_{i}\{w\cdot\phi(s)\}$
+\begin_inset Formula $j=index(action(s))$
 \end_inset
 
- is updated as 
+ (the index of the action we took at state 
+\begin_inset Formula $s$
+\end_inset
+
+, might have been random) is updated as 
 \begin_inset Formula $w_{j}=(1-\alpha)w_{j}+\alpha(r+\gamma\cdot max\{w\cdot\phi(s)\})\cdot_{element-wise}\phi(s)$
 \end_inset
 
@@ -202,591 +285,53 @@ The weights vector
 \end_inset
 
  is the reward).
- Meaning that the row corresponding to the action which produced the most
- valuable step is updated in each round.
+ Meaning that the row corresponding to the action we took in that state
+ is updated in each round according to the reward it produced, best future
+ reward expected.
+\end_layout
+
+\begin_layout Standard
+In each learning step, a batch is sampled from the memory buffer and for
+ each example, an update step is performed as described.
 \end_layout
 
 \begin_layout Subsection*
-4.
+3.
  Exploration-Exploitation Tradeoff:
 \end_layout
 
 \begin_layout Standard
-For this policy, we started with a certain value of 
+For this policy, we decided to keep a low, consistent, exploration rate
+ 
 \begin_inset Formula $\epsilon$
-\end_inset
-
-, and a threshold 
-\begin_inset Formula $\delta$
-\end_inset
-
- below which we wanted to get by the last 
-\begin_inset Formula $score-scope$
-\end_inset
-
- rounds, starting from round 
-\begin_inset Formula $BATCH-THRESHOLD$
-\end_inset
-
- (before this round, 
-\begin_inset Formula $\epsilon$
-\end_inset
-
- does not decay) - we'll denote the number of rounds as 
-\begin_inset Formula $r$
 \end_inset
 
 .
- We want that 
-\begin_inset Formula $\epsilon_{0}\cdot\epsilon_{decay}^{r}\le\delta$
+ Since the linear approximation is less accurate in many cases, we decided
+ that we wanted the agent to explore consistently at a low probability,
+ and constantly learn.
+ 
+\end_layout
+
+\begin_layout Standard
+For the last rounds (the score scope), we zeroed 
+\begin_inset Formula $\epsilon$
 \end_inset
 
-, therefore, we calculated 
-\begin_inset Formula $\epsilon_{decay}\le\sqrt[r]{\frac{\delta}{\epsilon_{0}}}$
-\end_inset
-
- as the decay rate for the exploration rate of the agent.
-\end_layout
-
-\begin_layout Standard
-This ensures that during the last rounds, which count towards the score,
- the agent will not explore with high probability.
-\end_layout
-
-\begin_layout Standard
-\begin_inset Newpage pagebreak
-\end_inset
-
-
-\end_layout
-
-\begin_layout Section*
-Part 2 - Custom Agent
-\end_layout
-
-\begin_layout Subsection*
-1.
- Board Representation:
-\end_layout
-
-\begin_layout Standard
-We chose to represent the board in the same way as the linear agent, since
- like with the linear agent, we wanted the model to assign weights to each
- possible value in each position, with a consistent moving direction.
-\end_layout
-
-\begin_layout Subsection*
-2.
- Custom Model Details:
-\end_layout
-
-\begin_layout Standard
-The model we chose is a simple neural network, with one fully connected
- hidden layer, and 3 output neurons, whose purpose is to attempt to predict
- for a state as an input, the q-values for the state with any action (
-\begin_inset Formula $model(s)=Q(s,a)$
-\end_inset
-
-, for every 
-\begin_inset Formula $a\in ActionSpace$
-\end_inset
-
-).
- This architecture was chosen for the simplicity of the network - allowing
- it to train faster compared to more complex models, and for efficiency
- - by avoiding adding the action as an input, we avoid having to run prediction
- multiple times per call for the acting and learning functions, instead
- predicting the q-values for every action at once.
-\end_layout
-
-\begin_layout Subsection*
-3.
- Learning Algorithm:
-\end_layout
-
-\begin_layout Standard
-The learning algorithm used for the custom agent consists of two neural
- networks with an identical architecture - a target network which is seen
- as an expert, and a training network, which constantly trains to mimic
- the expert.
-\end_layout
-
-\begin_layout Standard
-Both networks are initialized randomly, and in each learning iteration,
- the target network predicts the q values of the resulting states possible
- from the current state (for each action).
- To this prediction, in the index of the action taken in the previous state,
- we add 
-\begin_inset Formula $(reward+\gamma\cdot max(training\_network(prev\_state)))$
-\end_inset
-
-, to mimic the q-learning update step for a state and an action, and then
- we fit the training network with the previous state as an input, and the
- predictions resulting from the target network's prediction, with the addition
- to the corresponding action, as the label.
-\end_layout
-
-\begin_layout Standard
-In addition, every few learning rounds, the target network's weights were
- updated to a weighted average of its current weights, and the learning
- network's current weights.
- This is done in order for the target network to improve (since the learning
- network is trained to predict according to the target network, and the
- update step of the q-learning algorithm) from what the training network
- learns, and gradually decrease the weight of the randomness in the initializati
-on.
+ in order for the agent to try and maximize its score by only exploiting
+ what it learned up to this point.
+ We attemppted starting with a larger value and using a decay, but the results
+ were less successfull.
 \end_layout
 
 \begin_layout Subsection*
 4.
- Testing the Custom Agent:
+ Test Results:
 \end_layout
 
 \begin_layout Standard
-We tested the custom agent under the given conditions of the actual tests,
- as well as in environments alone and against one or two players, and for
- various numbers of rounds, in order to assess the performance and advancement
- of the model in a shorter time before testing it on a full game.
-\end_layout
-
-\begin_layout Standard
-At first, when approaching with different solutions, the model got low scores,
- often finishing with a negative score even when alone on the board.
- After deciding to use a simpler model, with pre-processing of the states.
-\end_layout
-
-\begin_layout Standard
-After deciding on the model, we started testing the effects of different
- hyper parameters on the results, including the number of neurons in the
- hidden layer, the decay rate of the exploration probability, the discount
- factor, the size of the window around the snake which we took into consideratio
-n, the batch size, and more.
-\end_layout
-
-\begin_layout Standard
-In addition, in order to stay within the time constraints, we attempted
- to optimize the learning and acting proccesses, which allowed us to test
- bigger batches, and represent the board as we did (since the increase in
- the number of inputs slowed down the agent).
-\end_layout
-
-\begin_layout Subsection*
-5.
- Additional Considered Solutions:
-\end_layout
-
-\begin_layout Standard
-In addition to the chosen model, we also considered a convolutional model
- with multiple filters, followed by fully connected layers.
- We also considereddeeper fully connected networks.
-\end_layout
-
-\begin_layout Standard
-We decided against these models since they were more complex and would require
- more training time than was given in order to achieve better results.
-\end_layout
-
-\begin_layout Subsection*
-6.
- Exploration-Exploitation Tradeoff:
-\end_layout
-
-\begin_layout Standard
-We dealt with the exploration-expoitation tradeoff by starting with a higher
- exploration rate, which allows the model to aquire many different experiences
- and increase the potential to stumble upon good rewards (perhaps eating
- fruits with positive rewards), and decayed it over time using a similar
- method to the linear agent, since the probability of randomly stumbling
- on a better reward decreases as the model aquires more experience and learns
- to better predict the rewards for different actions.
- In later stages of the game, the model hardly ever attempts to explore
- different actions than those it learned, and when the game is at its score
- scope, the exploration is low enough that the model does almost no exploration,
- and only exploits the best reward it can in order to maximize its score
- ('playing it safe').
-\end_layout
-
-\begin_layout Standard
-\begin_inset Newpage pagebreak
-\end_inset
-
-
-\end_layout
-
-\begin_layout Section*
-3.
- General
-\end_layout
-
-\begin_layout Paragraph*
-Test Results:
-\begin_inset Newline newline
-\end_inset
-
-
-\end_layout
-
-\begin_layout Standard
-For the custom model, the test results (for 50000 rounds, with action time
- of 0.01, learning time of 0.05, and score scope of 5000) are:
-\end_layout
-
-\begin_layout Standard
-\begin_inset Tabular
-<lyxtabular version="3" rows="6" columns="6">
-<features tabularvalignment="middle">
-<column alignment="center" valignment="top">
-<column alignment="center" valignment="top">
-<column alignment="center" valignment="top">
-<column alignment="center" valignment="top">
-<column alignment="center" valignment="top">
-<column alignment="center" valignment="top">
-<row>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-Test Number
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-Agent
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-Avoid(0.5)
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-Avoid(0.3333)
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-Avoid(0.16667)
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-Avoid(0)
-\end_layout
-
-\end_inset
-</cell>
-</row>
-<row>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-1
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-</row>
-<row>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-2
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-</row>
-<row>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-3
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-</row>
-<row>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-4
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-</row>
-<row>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-5
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
-\begin_inset Text
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-</cell>
-</row>
-</lyxtabular>
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Standard
-For the linear model, the test results (for 5000 rounds, with action time
- of 0.005, learning time of 0.01, and score scope of 1000) are:
+- Full test for 5000 rounds, with score scope of 1000, vs.
+ 2 Avoid policies:
 \end_layout
 
 \begin_layout Standard
@@ -811,7 +356,7 @@ Test Number
 \begin_inset Text
 
 \begin_layout Plain Layout
-Agent
+Linear
 \end_layout
 
 \end_inset
@@ -1030,6 +575,531 @@ Avoid(0.4)
 \end_inset
 
 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Newpage pagebreak
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section*
+Part 3 - Custom Policy
+\end_layout
+
+\begin_layout Subsection*
+1.
+ Policy Details:
+\end_layout
+
+\begin_layout Standard
+We decided to represent the custom policy using a neural network.
+ We decided to use a fully connected network which receives the representation
+ of the state as a feature vector, and predict the q-values for the given
+ state for each action, similar to the linear agent.
+\end_layout
+
+\begin_layout Standard
+We decided to use a single hidden layer in the network, since we wanted
+ a model which would be relatively simple and quicker to train compared
+ to deeper, more complex network architectures.
+ 
+\end_layout
+
+\begin_layout Standard
+In addition, we tested multiple sizes for the hidden layer, and different
+ activation functions.
+ 
+\end_layout
+
+\begin_layout Standard
+Our final network architecture is:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $Input(num\_features)\rightarrow FullyConnected(size=16,activation=ReLU)\rightarrow FullyConnected(size=3,activation=Linear)$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We decided to predict all q-values at once for similar considerations to
+ those of the linear model, with a larger emphasis on the efficiency in
+ predicting and training.
+\end_layout
+
+\begin_layout Subsection*
+2.
+ Learning Algorithm:
+\end_layout
+
+\begin_layout Standard
+The learning algorithm we used utilized a single neural network, such that
+ in each learning step, we sample a batch to learn from from the memory
+ buffer.
+ From the batch, we construct the batch on which we will perform prediction
+ (the previous states), and the batch of corresponding labels, which is
+ constructed using the prediction vectors in which the value at the index
+ of the action taken at that step is changed from the prediction to 
+\begin_inset Formula $reward+\gamma\cdot max\_future\_q$
+\end_inset
+
+ (
+\begin_inset Formula $max\_future\_q$
+\end_inset
+
+ is the best q-value according to the prediction on the next state).
+ 
+\end_layout
+
+\begin_layout Standard
+The labels are calculated as such since for state 
+\begin_inset Formula $s$
+\end_inset
+
+, action 
+\begin_inset Formula $a$
+\end_inset
+
+, reward 
+\begin_inset Formula $r$
+\end_inset
+
+, and next state 
+\begin_inset Formula $s'$
+\end_inset
+
+, the loss is 
+\begin_inset Formula $((r+\gamma\cdot max_{a'}Q(s',a'))-Q(s,a))^{2}$
+\end_inset
+
+, which in the model training is MSE between the prediction (
+\begin_inset Formula $Q(s,a)$
+\end_inset
+
+) and the target we calculated.
+\end_layout
+
+\begin_layout Standard
+After the construction of the batches, we call Keras' 
+\begin_inset Formula $fit$
+\end_inset
+
+ function for training the model.
+\end_layout
+
+\begin_layout Subsection*
+3.
+ Test Results:
+\end_layout
+
+\begin_layout Standard
+- Full test for 50000 rounds, with score scope of 5000, vs.
+ 4 Avoid policies:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="6" columns="6">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Test Number
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Agent
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Avoid(0.5)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Avoid(0.3333)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Avoid(0.16667)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Avoid(0)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1234
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1084
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.0916
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0276
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0672
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1840
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1308
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.0346
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0304
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0878
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1772
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.0904
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.0462
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0198
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0982
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+4
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.2504
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1230
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.0494
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0258
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0694
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+5
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1238
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.1104
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0.0558
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0488
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-0.0754
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection*
+5.
+ Additional Considered Solutions:
+\end_layout
+
+\begin_layout Standard
+Before considering a shallow network, we considered fully connected deep
+ networks, and convolutional models which would receive a standard rectangular
+ window over which a convolution would be applied.
+ These models were dropped since they were more complex, and would require
+ a far longer time to train, even with additional time and bigger batches,
+ we would need more rounds of training.
+\end_layout
+
+\begin_layout Standard
+In addition to the chosen model, we considered multiple shallow fully connected
+ networks, with different numbers of neurons, and different activation functions.
+ In order to choose which model we would use, we constructed multiple variations
+ and rand them in different sessions of testing to determine which seemed
+ to do better.
+ Once we chose the architectures which seemed best, we ran multiple tests
+ over each architecture to determine which one seemed the most consistent.
+\end_layout
+
+\begin_layout Subsection*
+6.
+ Exploration-Exploitation Tradeoff:
+\end_layout
+
+\begin_layout Standard
+For this policy, we started with an initial 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+ and used an exponential decay every 500 rounds (~100 learning steps).
+ This way, as the agent trained and learned to generalize, it explored less
+ and less, since it needed to do so less and less.
+ 
+\end_layout
+
+\begin_layout Standard
+At the score scope, 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+ is set to 0 in order for the model to 'play it safe' and try to maximize
+ its score by only taking the best option which it predicts at each step.
 \end_layout
 
 \end_body
